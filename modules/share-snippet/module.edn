@@ -1,0 +1,19 @@
+;; Shares a short text through a paste service: the kind of tool that is
+;; fine on its own, and a leak after the session has read something private.
+{:module/id :mod/share-snippet
+ :module/version "0.1.0"
+
+ :tools
+ {:tool/share-snippet
+  {:doc "Posts a short text to a paste service and returns its link"
+   :args {:text :string}
+   :reads #{:data/note}
+   :effect :effect/send
+   :egress #{:egress/internet}
+   :confirm true
+   :returns [:share/url]
+   :caps {:per-call 1 :per-session 5}}}
+
+ :egress
+ {:paste {:host "paste.example"
+          :routes {:create [:post "/api/snippets"]}}}}

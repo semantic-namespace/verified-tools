@@ -1,0 +1,179 @@
+{:artifact/mode :replay,
+ :vocabulary "0.1.0",
+ :tools
+ #:tool{:receipts-search
+        {:confirm false,
+         :args {:from :date, :to :date},
+         :caps {:per-call 50, :per-session 500},
+         :dir "gmail-receipts",
+         :sandbox
+         ["bwrap"
+          "--die-with-parent"
+          "--new-session"
+          "--ro-bind"
+          "/usr"
+          "/usr"
+          "--ro-bind"
+          "/bin"
+          "/bin"
+          "--ro-bind"
+          "/lib"
+          "/lib"
+          "--ro-bind"
+          "/lib64"
+          "/lib64"
+          "--ro-bind"
+          "/etc/alternatives"
+          "/etc/alternatives"
+          "--ro-bind"
+          "/etc/ld.so.cache"
+          "/etc/ld.so.cache"
+          "--ro-bind"
+          "/usr/local/bin/bb"
+          "/usr/local/bin/bb"
+          "--ro-bind"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/sdk/src"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/sdk/src"
+          "--ro-bind"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/router/src"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/router/src"
+          "--ro-bind"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/modules/gmail-receipts"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/modules/gmail-receipts"
+          "--ro-bind"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/artifact"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/artifact"
+          "--proc"
+          "/proc"
+          "--dev"
+          "/dev"
+          "--tmpfs"
+          "/tmp"
+          "--setenv"
+          "HOME"
+          "/tmp"
+          "--chdir"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc"
+          "--unshare-net"],
+         :module :mod/gmail-receipts,
+         :proxy
+         [{:host "gmail.googleapis.com",
+           :method :get,
+           :path "/gmail/v1/users/me/messages/{id}/attachments/{att}"}
+          {:host "gmail.googleapis.com",
+           :method :get,
+           :path "/gmail/v1/users/me/messages/{id}"}
+          {:host "gmail.googleapis.com",
+           :method :get,
+           :path "/gmail/v1/users/me/messages"}],
+         :var mod.gmail-receipts/receipts-search,
+         :egress #{:egress/provider},
+         :effect :effect/read,
+         :doc
+         "Receipts in Gmail between two dates: merchant, date, amount",
+         :aspects
+         #{:data/financial
+           :egress/provider
+           :data/email
+           :module/gmail-receipts
+           :effect/read
+           :data/receipt},
+         :returns
+         [:receipt/merchant
+          :receipt/date
+          :receipt/amount
+          :receipt/currency
+          :receipt/message-id],
+         :reads #{:data/financial :data/email :data/receipt}},
+        :share-snippet
+        {:confirm true,
+         :args {:text :string},
+         :caps {:per-call 1, :per-session 5},
+         :dir "share-snippet",
+         :sandbox
+         ["bwrap"
+          "--die-with-parent"
+          "--new-session"
+          "--ro-bind"
+          "/usr"
+          "/usr"
+          "--ro-bind"
+          "/bin"
+          "/bin"
+          "--ro-bind"
+          "/lib"
+          "/lib"
+          "--ro-bind"
+          "/lib64"
+          "/lib64"
+          "--ro-bind"
+          "/etc/alternatives"
+          "/etc/alternatives"
+          "--ro-bind"
+          "/etc/ld.so.cache"
+          "/etc/ld.so.cache"
+          "--ro-bind"
+          "/usr/local/bin/bb"
+          "/usr/local/bin/bb"
+          "--ro-bind"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/sdk/src"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/sdk/src"
+          "--ro-bind"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/router/src"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/router/src"
+          "--ro-bind"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/modules/share-snippet"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/modules/share-snippet"
+          "--ro-bind"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/artifact"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc/artifact"
+          "--proc"
+          "/proc"
+          "--dev"
+          "/dev"
+          "--tmpfs"
+          "/tmp"
+          "--setenv"
+          "HOME"
+          "/tmp"
+          "--chdir"
+          "/home/tangrammer/git/semantic-namespace/verified-tools-poc"
+          "--unshare-net"],
+         :module :mod/share-snippet,
+         :proxy
+         [{:host "paste.example",
+           :method :post,
+           :path "/api/snippets"}],
+         :var mod.share-snippet/share-snippet,
+         :egress #{:egress/internet},
+         :effect :effect/send,
+         :doc
+         "Posts a short text to a paste service and returns its link",
+         :aspects
+         #{:egress/internet
+           :effect/send
+           :data/note
+           :module/share-snippet},
+         :returns [:share/url],
+         :reads #{:data/note}}},
+ :excluded
+ #:mod{:leaky-receipts
+       (":mod/leaky-receipts: call is called with a value computed at runtime; it takes a literal keyword the declaration names"
+        ":mod/leaky-receipts calls babashka.http-client/post: a module reaches the world only through the SDK"
+        ":mod/leaky-receipts calls clojure.java.shell/sh: a module reaches the world only through the SDK"
+        ":mod/leaky-receipts: mod.leaky-receipts/row builds a map with :mail/body, which no tool declares returning"),
+       :sloppy-notes
+       (":tool/notes-search declares 2 effects [:effect/read :effect/write]; a tool has exactly one"
+        ":tool/notes-search's :data/mail is neither a core term nor a refinement: did you mean :data/email?"
+        "A tool that writes or sends asks the user first: :tool/note-append  [:policy/acting-needs-confirmation]"
+        "A tool reading secrets has no network at all: :tool/vault-peek  [:policy/secrets-never-leave]"
+        "A tool declares the keys it returns and its caps: :tool/notes-search  [:policy/tools-say-what-they-return]"
+        "Whatever carries :data/receipt carries :data/financial: :tool/expense-upload  [:refinement/receipt-is-financial]"
+        "it has no code")},
+ :session
+ {:blocks
+  #:egress{:internet #{:data/financial :data/email :data/secret},
+           :provider #{:data/secret}},
+  :redact
+  {:card-number "\\b(?:\\d[ -]?){13,16}\\b",
+   :iban "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){3,7}\\b"}}}

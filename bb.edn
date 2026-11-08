@@ -1,6 +1,15 @@
-;; bb check: meta-source over the vocabulary and the modules
-{:deps {io.github.semantic-namespace/meta-source {:git/url "https://github.com/semantic-namespace/meta-source"
+;; bb check   meta-source over the vocabulary, the modules and their code
+;; bb build   the artifact: what the router may serve, and why the rest is out
+;; bb serve   the router, an MCP server over stdio, serving the artifact
+{:paths ["router/src" "sdk/src"]
+ :deps {io.github.semantic-namespace/meta-source {:git/url "https://github.com/semantic-namespace/meta-source"
                                                   :git/sha "24cfd78374cdd98c8d8e9b498f3f983a82390eff"}}
  :tasks {check {:doc "meta-source check over vocab/ and modules/: bb check [--fail-on error]"
                 :requires ([meta-source.cli :as cli])
-                :task (apply cli/-main "check" "--brief" *command-line-args*)}}}
+                :task (apply cli/-main "check" "--brief" *command-line-args*)}
+         build {:doc "Builds artifact/artifact.edn from what meta-source reads and checks: bb build [replay|live]"
+                :requires ([verified.build :as build])
+                :task (apply build/-main *command-line-args*)}
+         serve {:doc "The router: an MCP server over stdio serving the artifact's tools"
+                :requires ([verified.router :as router])
+                :task (router/-main)}}}

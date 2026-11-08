@@ -3,7 +3,7 @@
 ;; module declares is an entity whose aspects are exactly what it declares;
 ;; atlas types it, and the vocabulary's grammar, refinements and policies are
 ;; checked over it. Nothing runs here: this checks declarations.
-{:src []
+{:src ["modules"]
  :registry ["vocab"]
  :packs {verified.pack/pack {}
          atlas.meta-source/pack {}}

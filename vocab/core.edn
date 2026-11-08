@@ -65,6 +65,17 @@
   :refinement/narrow :data/password
   :refinement/broad :data/secret}
 
+ ;; ---- what holds across a session, compiled into the artifact for the
+ ;; router: once a session has read a data class, tools with these egress
+ ;; leave its view; and what is masked in any result
+ :verified/session-policy
+ {:atlas/type :verified/session-policy
+  :atlas/aspects #{:meta/session-policy}
+  :session/blocks {:egress/internet #{:data/financial :data/secret :data/email}
+                   :egress/provider #{:data/secret}}
+  :redact/patterns {:card-number "\\b(?:\\d[ -]?){13,16}\\b"
+                    :iban "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){3,7}\\b"}}
+
  ;; ---- the policies, in core terms
  :policy/financial-stays-with-provider
  {:atlas/type :atlas/invariant
