@@ -1,0 +1,6 @@
+;; bb check: meta-source over the vocabulary and the modules
+{:deps {io.github.semantic-namespace/meta-source {:git/url "https://github.com/semantic-namespace/meta-source"
+                                                  :git/sha "24cfd78374cdd98c8d8e9b498f3f983a82390eff"}}
+ :tasks {check {:doc "meta-source check over vocab/ and modules/: bb check [--fail-on error]"
+                :requires ([meta-source.cli :as cli])
+                :task (apply cli/-main "check" "--brief" *command-line-args*)}}}

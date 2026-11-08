@@ -1,0 +1,13 @@
+;; Verified local tools, a proof of concept: the core vocabulary (vocab/) and
+;; the modules (modules/*/module.edn), read by meta-source. Each tool a
+;; module declares is an entity whose aspects are exactly what it declares;
+;; atlas types it, and the vocabulary's grammar, refinements and policies are
+;; checked over it. Nothing runs here: this checks declarations.
+{:src []
+ :registry ["vocab"]
+ :packs {verified.pack/pack {}
+         atlas.meta-source/pack {}}
+ :deps {verified/packs {:local/root "packs"}
+        io.github.semantic-namespace/atlas
+        {:git/url "https://github.com/semantic-namespace/atlas"
+         :git/sha "2da25afae701ff5b1370f7c9a4d9ccf42d8f7a2a" :deps/root "core"}}}

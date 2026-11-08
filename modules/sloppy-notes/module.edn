@@ -1,0 +1,43 @@
+;; A module written carelessly, each mistake one the vocabulary's checks
+;; should catch.
+{:module/id :mod/sloppy-notes
+ :module/version "0.0.1"
+
+ :tools
+ {;; a synonym for a core term (:data/mail for :data/email), two effects,
+  ;; and no :returns or :caps
+  :tool/notes-search
+  {:doc "Searches notes and mail"
+   :reads #{:data/note :data/mail}
+   :effect #{:effect/read :effect/write}
+   :egress #{:egress/none}
+   :confirm true}
+
+  ;; a narrow term without its broad one: :data/receipt alone, so the
+  ;; financial policy would not see it
+  :tool/expense-upload
+  {:doc "Uploads expenses to a web service"
+   :reads #{:data/receipt}
+   :effect :effect/send
+   :egress #{:egress/internet}
+   :confirm true
+   :returns [:upload/id]
+   :caps {:per-call 10 :per-session 10}}
+
+  ;; a secret read by a tool with network
+  :tool/vault-peek
+  {:doc "Looks up a password for a site"
+   :reads #{:data/password :data/secret}
+   :effect :effect/read
+   :egress #{:egress/provider}
+   :returns [:secret/site :secret/value]
+   :caps {:per-call 1 :per-session 5}}
+
+  ;; writes, and doesn't ask
+  :tool/note-append
+  {:doc "Appends to a note"
+   :reads #{:data/note}
+   :effect :effect/write
+   :egress #{:egress/none}
+   :returns [:note/path]
+   :caps {:per-call 1 :per-session 20}}}}

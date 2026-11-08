@@ -1,0 +1,104 @@
+;; The core vocabulary: the terms a module may use in the reserved
+;; namespaces (:data/*, :effect/*, :egress/*), the refinements that let a
+;; module be more precise (a narrow term that always carries its broad
+;; one), and the policies, written in core terms only, so one policy covers
+;; every module.
+{;; ---- the types
+ :verified/tool
+ {:atlas/type :atlas/ontology
+  :atlas/aspects #{:meta/ontology-tool}
+  :ontology/for :verified/tool
+  ;; a tool a module declares (the modules pack gives :verified/kind :tool)
+  :ontology/from {:verified/kind :tool}
+  :ontology/keys [:tool/returns :tool/caps]}
+
+ :verified/vocabulary
+ {:atlas/type :atlas/ontology
+  :atlas/aspects #{:meta/ontology-vocabulary}
+  :ontology/for :verified/vocabulary
+  :ontology/keys [:vocabulary/version :vocabulary/reserved :vocabulary/terms]}
+
+ :verified/refinement
+ {:atlas/type :atlas/ontology
+  :atlas/aspects #{:meta/ontology-refinement}
+  :ontology/for :verified/refinement
+  :ontology/keys [:refinement/narrow :refinement/broad]}
+
+ ;; ---- the terms
+ :verified/core-vocabulary
+ {:atlas/type :verified/vocabulary
+  :atlas/aspects #{:meta/core-vocabulary}
+  :vocabulary/version "0.1.0"
+  :vocabulary/reserved #{"data" "effect" "egress"}
+  :vocabulary/terms
+  {:data/email "messages, their headers, bodies and attachments"
+   :data/financial "money: amounts, payments, accounts, merchants"
+   :data/calendar "events, times, attendees"
+   :data/note "the user's own notes"
+   :data/contact "people and how to reach them"
+   :data/location "where the user is or has been"
+   :data/secret "credentials, keys, passwords"
+   :effect/read "reads, changes nothing"
+   :effect/write "changes the user's data"
+   :effect/send "sends something on the user's behalf"
+   :egress/none "no network"
+   :egress/provider "only to the provider that already holds the data"
+   :egress/internet "anywhere else"}}
+
+ ;; ---- the refinements: a narrow term always carries its broad one, so a
+ ;; policy on the broad term covers it (checked, never inferred)
+ :refinement/receipt-is-financial
+ {:atlas/type :verified/refinement
+  :atlas/aspects #{:meta/refinement-receipt}
+  :refinement/narrow :data/receipt
+  :refinement/broad :data/financial}
+
+ :refinement/invoice-is-financial
+ {:atlas/type :verified/refinement
+  :atlas/aspects #{:meta/refinement-invoice}
+  :refinement/narrow :data/invoice
+  :refinement/broad :data/financial}
+
+ :refinement/password-is-secret
+ {:atlas/type :verified/refinement
+  :atlas/aspects #{:meta/refinement-password}
+  :refinement/narrow :data/password
+  :refinement/broad :data/secret}
+
+ ;; ---- the policies, in core terms
+ :policy/financial-stays-with-provider
+ {:atlas/type :atlas/invariant
+  :atlas/aspects #{:meta/policy-financial-stays-with-provider}
+  :invariant/severity :error
+  :invariant/rule {:doc "A tool reading financial data sends nothing but to the provider holding it"
+                   :severity :error
+                   :when {:= {:atlas/type :verified/tool :atlas/aspects :data/financial}}
+                   :require [{:not {:= {:atlas/aspects :egress/internet}}}]}}
+
+ :policy/secrets-never-leave
+ {:atlas/type :atlas/invariant
+  :atlas/aspects #{:meta/policy-secrets-never-leave}
+  :invariant/severity :error
+  :invariant/rule {:doc "A tool reading secrets has no network at all"
+                   :severity :error
+                   :when {:= {:atlas/type :verified/tool :atlas/aspects :data/secret}}
+                   :require [{:= {:atlas/aspects :egress/none}}]}}
+
+ :policy/acting-needs-confirmation
+ {:atlas/type :atlas/invariant
+  :atlas/aspects #{:meta/policy-acting-needs-confirmation}
+  :invariant/severity :error
+  :invariant/rule {:doc "A tool that writes or sends asks the user first"
+                   :severity :error
+                   :when {:= {:atlas/type :verified/tool}
+                          :or [{:= {:atlas/aspects :effect/write}} {:= {:atlas/aspects :effect/send}}]}
+                   :require [{:= {:tool/confirm true}}]}}
+
+ :policy/tools-say-what-they-return
+ {:atlas/type :atlas/invariant
+  :atlas/aspects #{:meta/policy-tools-say-what-they-return}
+  :invariant/severity :error
+  :invariant/rule {:doc "A tool declares the keys it returns and its caps"
+                   :severity :error
+                   :when {:= {:atlas/type :verified/tool}}
+                   :require [{:has [:tool/returns :tool/caps]}]}}}

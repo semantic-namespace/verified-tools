@@ -1,0 +1,28 @@
+;; Receipts from Gmail: read-only, through Google's API, parsed on the
+;; user's machine; only receipt rows reach the model.
+{:module/id :mod/gmail-receipts
+ :module/version "0.1.0"
+
+ :tools
+ {:tool/receipts-search
+  {:doc "Receipts in Gmail between two dates: merchant, date, amount"
+   :args {:from :date :to :date}
+   :reads #{:data/email :data/receipt :data/financial}
+   :effect :effect/read
+   :egress #{:egress/provider}
+   :returns [:receipt/merchant :receipt/date :receipt/amount :receipt/currency :receipt/message-id]
+   :caps {:per-call 50 :per-session 500}}}
+
+ :egress
+ {:gmail {:host "gmail.googleapis.com"
+          :auth :google
+          :routes {:list-messages  [:get "/gmail/v1/users/me/messages"]
+                   :get-message    [:get "/gmail/v1/users/me/messages/{id}"]
+                   :get-attachment [:get "/gmail/v1/users/me/messages/{id}/attachments/{att}"]}}}
+
+ :auth
+ {:google {:scopes #{"https://www.googleapis.com/auth/gmail.readonly"}
+           :token :keychain/gmail}}
+
+ :queries
+ {:receipts "label:receipts after:{from} before:{to}"}}
