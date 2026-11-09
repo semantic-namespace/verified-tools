@@ -2,6 +2,7 @@
 ;; bb build   the artifact: what the router may serve, and why the rest is out
 ;; bb serve   the router, an MCP server over stdio, serving the artifact
 ;; bb confirm  the user answering what the router asks, in their own terminal
+;; bb test     the checks, the build, the router, the sandbox and the egress, end to end
 {:paths ["router/src" "sdk/src" "dev"]
  :deps {io.github.semantic-namespace/meta-source {:git/url "https://github.com/semantic-namespace/meta-source"
                                                   :git/sha "24cfd78374cdd98c8d8e9b498f3f983a82390eff"}}
@@ -13,10 +14,14 @@
                 :task (apply build/-main *command-line-args*)}
          serve {:doc "The router: an MCP server over stdio serving the artifact's tools"
                 :requires ([verified.router :as router])
-                :task (router/-main)}
+                :task (apply router/-main *command-line-args*)}
          confirm {:doc "What the router is waiting to ask, and the answer: bb confirm [<id> yes|no]"
                   :requires ([verified.confirm :as confirm])
                   :task (apply confirm/-main *command-line-args*)}
+         test {:doc "Runs test/: bb test [namespace-suffix ...]"
+               :extra-paths ["test"]
+               :requires ([verified.test-runner :as tr])
+               :task (apply tr/-main *command-line-args*)}
          fake-provider {:doc "A stand-in for Gmail and the paste service, for the live path: bb fake-provider [port]"
                         :requires ([fake-provider :as fp])
                         :task (apply fp/-main *command-line-args*)}}}

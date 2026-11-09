@@ -17,7 +17,6 @@
             [meta-source.index :as index]))
 
 (def root (.getCanonicalPath (io/file ".")))
-(def out-file "artifact/artifact.edn")
 
 (defn- sha256 [^String s]
   (let [d (.digest (java.security.MessageDigest/getInstance "SHA-256") (.getBytes s "UTF-8"))]
@@ -34,13 +33,13 @@
    module's code and the SDK and runner read-only, no home directory, a
    private /tmp, and no network, ever. A tool that declares egress reaches
    it through the router, over its stdio, and only on its declared routes."
-  [{:keys [dir]}]
+  [{:keys [dir artifact-dir]}]
   (let [ro #(when (.exists (io/file %)) ["--ro-bind" % %])
         p #(str root "/" %)]
     (vec (concat ["bwrap" "--die-with-parent" "--new-session"]
                  (mapcat ro ["/usr" "/bin" "/lib" "/lib64" "/etc/alternatives" "/etc/ld.so.cache"])
                  (ro (bin "bb"))
-                 (mapcat ro [(p "sdk/src") (p "router/src") (p (str "modules/" dir)) (p "artifact")])
+                 (mapcat ro [(p "sdk/src") (p "router/src") (p (str "modules/" dir)) artifact-dir])
                  ["--proc" "/proc" "--dev" "/dev" "--tmpfs" "/tmp" "--setenv" "HOME" "/tmp" "--chdir" root
                   "--unshare-net"]))))
 
@@ -54,8 +53,12 @@
          (cond-> {:host host :method method :path path}
            auth (assoc :auth auth :scopes (get-in decl [:auth auth :scopes]))))))
 
-(defn -main [& [mode]]
+(defn -main
+  "bb build [replay|live] [out-file]"
+  [& [mode out-file]]
   (let [mode (keyword (or mode "replay"))
+        out-file (or out-file "artifact/artifact.edn")
+        artifact-dir (.getCanonicalPath (.getParentFile (io/file (.getAbsolutePath (io/file out-file)))))
         cfg (cli/config {:root root})
         _ ((requiring-resolve 'babashka.deps/add-deps)
            {:deps ((requiring-resolve 'meta-source.cli/under-root) (:deps cfg) root)})
@@ -91,7 +94,7 @@
                             :reads (set (:reads t)) :effect (:effect t) :egress (set (:egress t))
                             :confirm (boolean (:confirm t))
                             :aspects (get-in es [tid :entry :atlas/aspects])
-                            :sandbox (sandbox {:dir dir})
+                            :sandbox (sandbox {:dir dir :artifact-dir artifact-dir})
                             :proxy (proxy-allow decl)}]))
         artifact {:artifact/mode mode
                   :vocabulary (:vocabulary/version vocab)
@@ -100,7 +103,7 @@
                   :session {:blocks (:session/blocks session)
                             :redact (:redact/patterns session)}}
         text (with-out-str (pp/pprint artifact))]
-    (io/make-parents out-file)
+    (io/make-parents (io/file (.getAbsolutePath (io/file out-file))))
     (spit out-file text)
     (spit (str out-file ".sha256") (sha256 text))
     (println "artifact" out-file (subs (sha256 text) 0 12) ":" (count tools) "tools;"

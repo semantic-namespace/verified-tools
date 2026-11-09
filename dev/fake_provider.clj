@@ -6,6 +6,7 @@
 
      bb fake-provider [port]   (default 8765; token: dev/fake.token)"
   (:require [cheshire.core :as json]
+            [clojure.java.io]
             [clojure.edn :as edn]
             [clojure.string :as str]
             [org.httpkit.server :as server]))
@@ -13,8 +14,11 @@
 (def gmail (edn/read-string (slurp "modules/gmail-receipts/fixtures.edn")))
 (def token (str/trim (slurp "dev/fake.token")))
 (def pastes (atom 0))
+(def log-file (atom "audit/provider.log"))
 
-(defn- log! [m] (spit "audit/provider.log" (str (pr-str (assoc m :at (str (java.time.Instant/now)))) "\n") :append true))
+(defn- log! [m]
+  (clojure.java.io/make-parents @log-file)
+  (spit @log-file (str (pr-str (assoc m :at (str (java.time.Instant/now)))) "\n") :append true))
 (defn- json-resp [status body] {:status status :headers {"content-type" "application/json"} :body (json/generate-string body)})
 
 (defn handler [{:keys [request-method uri query-string headers body]}]

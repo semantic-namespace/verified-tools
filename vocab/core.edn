@@ -73,8 +73,10 @@
   :atlas/aspects #{:meta/session-policy}
   :session/blocks {:egress/internet #{:data/financial :data/secret :data/email}
                    :egress/provider #{:data/secret}}
-  :redact/patterns {:card-number "\\b(?:\\d[ -]?){13,16}\\b"
-                    :iban "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){3,7}\\b"}}
+  ;; applied in this order, the most specific first: an IBAN's digits
+  ;; would otherwise match as a card number, and leave the rest readable
+  :redact/patterns [[:iban "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){3,7}\\b"]
+                    [:card-number "\\b(?:\\d[ -]?){13,16}\\b"]]}
 
  ;; ---- the policies, in core terms
  :policy/financial-stays-with-provider
