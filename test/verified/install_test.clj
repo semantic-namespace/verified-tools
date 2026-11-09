@@ -137,6 +137,47 @@
       (is (not (:installed res)))
       (is (some #(str/includes? % "no policy has checked it") (:excluded res)) out))))
 
+(def bad-reader
+  "A tool that lists the notes root but declares reading financial data."
+  {"module.edn" "{:module/id :mod/note-peek
+ :module/version \"0.1.0\"
+ :tools
+ {:tool/note-peek
+  {:doc \"Peeks at notes\"
+   :args {:text :string}
+   :reads #{:data/financial}
+   :effect :effect/read
+   :egress #{:egress/none}
+   :returns [:peek/path]
+   :caps {:per-call 1 :per-session 1}}}
+ :files
+ {:notes {:holds :data/note :extensions #{\"md\"}}}}
+"
+   "src/mod/note_peek.clj" "(ns mod.note-peek (:require [verified.sdk.files :as files] [verified.sdk.out :as out]))
+(defn ^{:module/tool :tool/note-peek} note-peek [_]
+  (out/rows :tool/note-peek (map (fn [p] {:peek/path p}) (files/list :notes))))"})
+
+(deftest a-root-read-must-be-declared
+  (let [d (project!) {:keys [url sha]} (repo! "note-peek" bad-reader)
+        [out res] (run #(install/add! {:root d :url url :sha sha :yes true}))]
+    (is (not (:installed res)))
+    (is (some #(str/includes? % "doesn't declare reading :data/note") (:excluded res)) out)))
+
+(deftest a-tool-id-names-one-tool
+  (let [d (project!)
+        {:keys [url sha]} (repo! "notes-again" (update word-count "module.edn" str/replace ":tool/word-count" ":tool/local-notes-search"))]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"taken by installed modules: :tool/local-notes-search \(:mod/local-notes\)"
+                          (install/add! {:root d :url url :sha sha :dry-run true})))))
+
+(deftest an-upgrade-that-reads-more-files
+  (let [d (project!)
+        {:keys [url sha]} (repo! "notes-v2" (module-files "local-notes" #(-> %
+                                                                             (assoc :module/version "0.2.0")
+                                                                             (update-in [:files :notes :extensions] conj "pdf"))))
+        [out _] (run #(install/add! {:root d :url url :sha sha :dry-run true}))]
+    (is (str/includes? out "▲ local-notes-search: reads more kinds of file from notes: *.pdf") out)
+    (is (str/includes? out "files    the folder you bind as notes, read-only: note (the user's own notes)"))))
+
 (deftest pinned-by-sha-only
   (let [d (project!) {:keys [url]} (repo! "word-count-branch" word-count)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"full commit SHA"

@@ -1,0 +1,22 @@
+;; Notes in a folder on the user's machine: searched here, with no network
+;; at all. The module names its root and what it holds, never where it is:
+;; the user binds :notes to a folder (live.edn :roots), and the sandbox
+;; mounts only that folder, read-only.
+{:module/id :mod/local-notes
+ :module/version "0.1.0"
+
+ :tools
+ {:tool/local-notes-search
+  {:doc "Notes in your notes folder that mention a text: path, title and the lines around it"
+   :args {:text :string}
+   :reads #{:data/note}
+   :effect :effect/read
+   :egress #{:egress/none}
+   :returns [:note/path :note/title :note/excerpt]
+   :caps {:per-call 20 :per-session 200}}}
+
+ :files
+ {:notes {:holds :data/note
+          :extensions #{"md" "txt" "org"}
+          :max-bytes 500000
+          :max-files 5000}}}

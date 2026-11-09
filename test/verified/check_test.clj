@@ -14,7 +14,7 @@
     (str (or (:rule p) (:problem p)))))
 
 (deftest good-modules-are-clean
-  (doseq [m ["gmail-receipts" "share-snippet"]]
+  (doseq [m ["gmail-receipts" "share-snippet" "local-notes"]]
     (is (empty? (in m :error)) m)
     (is (empty? (in m :warning)) m)))
 

@@ -27,7 +27,7 @@
   (second (re-find #"(?:^|/)modules/([^/]+)/" (str f))))
 
 (def ^:private sdk-fns
-  '{verified.sdk.http #{call} verified.sdk.query #{fill} verified.sdk.files #{read} verified.sdk.out #{rows}})
+  '{verified.sdk.http #{call} verified.sdk.query #{fill} verified.sdk.files #{read list} verified.sdk.out #{rows}})
 
 ;; what a module may not call: the world outside the SDK
 (def ^:private forbidden-nses
@@ -61,6 +61,7 @@
                                             (keyword (name ek) (name rk)))))
                 :module/queries (vec (sort (keys (get-in by-key [:queries :v]))))
                 :module/roots (vec (sort (keys (get-in by-key [:files :v]))))
+                :module/root-holds (into (sorted-map) (for [[r d] (get-in by-key [:files :v])] [r (when (map? d) (:holds d))]))
                 :module/returns (vec (sort (distinct (mapcat :returns (vals (get-in by-key [:tools :v])))))) 
                 :module/version (get-in by-key [:module/version :v])
                 :module/tools (vec (keys (get-in by-key [:tools :v])))
@@ -189,6 +190,13 @@
                 :when (and (reserved (namespace a)) (not (terms a)) (not (narrows a)))]
             {:severity :error :problem :aspect-not-in-vocabulary :dev-id id :aspect a
              :nearest (nearest a (concat terms narrows)) :definition (loc e)}))
+        ;; ---- a root says which data class it holds, in the vocabulary
+        (when vocab
+          (for [[id e] entities
+                :when (= :module (get-in e [:entry :verified/kind]))
+                [r holds] (get-in e [:entry :module/root-holds])
+                :when (not (and (keyword? holds) (= "data" (namespace holds)) (or (terms holds) (narrows holds))))]
+            {:severity :error :problem :root-holds-unknown :dev-id id :root r :holds holds :definition (loc e)}))
         ;; ---- each module's code against its declaration
         (let [modules (for [[id e] entities :when (= :module (get-in e [:entry :verified/kind]))] [id (:entry e) e])
               code (into {} (for [[_ e] entities :when (= :code (get-in e [:entry :verified/kind]))]
@@ -211,13 +219,25 @@
                            :let [allowed (case (str fname)
                                            "call" (set (:module/routes m))
                                            "fill" (set (:module/queries m))
-                                           "read" (set (:module/roots m))
+                                           ("read" "list") (set (:module/roots m))
                                            "rows" #{(tool-of from-var)})]
                            :when (or (= :computed arg) (not (allowed arg)))]
                        {:severity :error :problem (if (= :computed arg) :sdk-arg-not-literal :sdk-arg-not-declared)
                         :dev-id mid :sdk fname :arg arg :definition (at f row)})
                      (for [[sym f row] (:code/forbidden c)]
                        {:severity :error :problem :call-outside-sdk :dev-id mid :sym sym :definition (at f row)})
+                     ;; what a root holds is read by whichever tool reads files from it:
+                     ;; the tool whose function calls files/*, else (a helper calls it)
+                     ;; every tool of the module
+                     (distinct
+                      (for [[fname arg from-var f row] (:code/calls c)
+                            :when (and (#{"read" "list"} (str fname)) (keyword? arg))
+                            :let [holds (get (:module/root-holds m) arg)]
+                            :when holds
+                            t (if-let [t (tool-of from-var)] [t] (sort declared))
+                            :when (not (some #{holds} (get-in entities [t :entry :tool/reads])))]
+                        {:severity :error :problem :root-data-not-read :dev-id t :root arg :holds holds
+                         :definition (at f row)}))
                      (for [[k v f row] (:code/keys c) :when (not (contains? (set (:module/returns m)) k))]
                        {:severity :error :problem :key-not-declared :dev-id mid :key k :var v :definition (at f row)})))]
             f)))))
@@ -235,6 +255,10 @@
     :sdk-arg-not-literal (fn [p id _] (str id ": " (:sdk p) " is called with a value computed at runtime; it takes a literal keyword the declaration names"))
     :sdk-arg-not-declared (fn [p id _] (str id ": " (:sdk p) " " (:arg p) " is not in the declaration"))
     :call-outside-sdk (fn [p id _] (str id " calls " (:sym p) ": a module reaches the world only through the SDK"))
+    :root-data-not-read (fn [p id _] (str id " reads files from root " (:root p) ", which holds " (:holds p)
+                                          ", and doesn't declare reading " (:holds p)))
+    :root-holds-unknown (fn [p id _] (str id "'s root " (:root p) " holds " (pr-str (:holds p))
+                                          ": a root says which :data/* class it holds, a core term or a refinement"))
     :key-not-declared (fn [p id _] (str id ": " (:var p) " builds a map with " (:key p) ", which no tool declares returning"))}
 
    :pack/describe (fn [entry] (case (:verified/kind entry)
