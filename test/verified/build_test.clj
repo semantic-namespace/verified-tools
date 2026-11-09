@@ -10,7 +10,7 @@
 
 (deftest only-runnable-modules
   (is (= #{:tool/receipts-search :tool/share-snippet :tool/local-notes-search} (set (keys (:tools @artifact)))))
-  (is (= {:mod/leaky-receipts 4 :mod/sloppy-notes 7} (update-vals (:excluded @artifact) count)))
+  (is (= {:mod/leaky-receipts 5 :mod/sloppy-notes 7} (update-vals (:excluded @artifact) count)))
   (is (some #(str/includes? % "no code") (get-in @artifact [:excluded :mod/sloppy-notes]))))
 
 (deftest sandboxes
