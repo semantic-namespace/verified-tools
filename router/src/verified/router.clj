@@ -221,12 +221,22 @@
 
 ;; ---- asking the user, around the agent
 
-(defn- question [tid {:keys [doc egress proxy]} args]
-  (str "The agent wants to run " (tool-name tid) " (" doc ").\n"
-       "It would send to " (str/join ", " (distinct (map :host proxy)))
-       " (" (str/join ", " (map name (sort egress))) "):\n\n"
-       (str/join "\n" (for [[k v] (sort args)] (str "  " k ": " v)))
-       "\n\nAllow this one call?"))
+(defn- one-line
+  "A value on one line, its line breaks shown as ⏎, quoted: what will be
+   sent, never folded away by a client that shows a question's first lines."
+  [v]
+  (pr-str (str/replace (str v) #"\r?\n" " ⏎ ")))
+
+(defn- question
+  "What the user is asked, the payload first: clients fold a question after
+   its first lines, and the user approves what they can see. Line 1 says
+   where it goes, line 2 is exactly what goes, line 3 is which tool asks."
+  [tid {:keys [doc egress proxy]} args]
+  (str "Send this to " (str/join ", " (distinct (map :host proxy)))
+       " (" (str/join ", " (map name (sort egress))) ")?\n"
+       (str/join "; " (for [[k v] (sort args)] (str k ": " (one-line v)))) "\n"
+       "— " (tool-name tid) ": " doc "\n"
+       "Allow this one call?"))
 
 (defn- ask-by-elicitation [q]
   (let [id (str "confirm-" (System/nanoTime))]
