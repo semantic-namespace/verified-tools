@@ -69,10 +69,11 @@
                           [(name k) {:type "string" :description (case t :date "a date, YYYY-MM-DD" :string "text, at most 2000 characters" (name t))}]))
    :required (mapv name (keys args))})
 
-(defn- description [{:keys [doc reads returns egress confirm]}]
+(defn- description [{:keys [doc reads returns egress confirm caps]}]
   (str doc ". Reads " (str/join ", " (map name (sort reads)))
        "; returns only " (str/join ", " (map name returns))
        "; network: " (str/join ", " (map name (sort egress)))
+       "; at most " (:per-call caps) " results a call"
        (when confirm "; asks the user before each call") "."))
 
 (defn- text [s] {:content [{:type "text" :text s}]})
@@ -184,15 +185,15 @@
                    (when-let [line (.readLine ^java.io.BufferedReader r)]
                      (let [msg (try (edn/read-string line) (catch Exception _ nil))]
                        (cond
-                         (and (map? msg) (contains? msg :verified/result)) (:verified/result msg)
+                         (and (map? msg) (contains? msg :verified/result)) msg
                          (and (map? msg) (:verified/request msg))
                          (do (.write to-tool (str (pr-str (egress! tid t (:verified/request msg))) "\n"))
                              (.flush to-tool)
                              (recur))
                          :else (recur))))))
         {:keys [exit err]} @p]
-    (if (and (zero? exit) (sequential? result))
-      {:rows result}
+    (if (and (zero? exit) (sequential? (:verified/result result)))
+      {:rows (:verified/result result) :more (boolean (:verified/more result))}
       {:failed (or (some->> (str err) (re-find #"(?m)^Message:\s+(.*)$") second)
                    (first (str/split-lines (str err)))
                    "no result")})))
@@ -277,16 +278,24 @@
         (when asked (audit! (merge {:tool tid :args args :asked-user true} asked)))
         (if (and asked (not (:allowed asked)))
           (refuse tid (str "the user did not allow this call (" (name (:via asked)) ": " (:answer asked) ")") :confirm)
-          (let [{:keys [rows failed]} (run-tool tid t args)]
+          (let [{:keys [rows more failed]} (run-tool tid t args)]
             (if failed
               (do (audit! {:tool tid :args args :failed failed})
                   (assoc (text (str "the tool failed: " failed)) :isError true))
-              (let [rows (->> rows
-                              (take (:per-call caps 0))
+              (let [cap (:per-call caps 0)
+                    more (or more (> (count rows) cap))
+                    rows (->> rows
+                              (take cap)
                               (mapv #(update-vals (select-keys % returns) (partial redact patterns))))]
                 (swap! session #(-> % (update :taint into reads) (update-in [:calls tid] (fnil inc 0))))
-                (audit! {:tool tid :args args :rows (count rows) :keys returns :taint (:taint @session)})
-                (text (json/generate-string rows))))))))))
+                (audit! {:tool tid :args args :rows (count rows) :more more :keys returns :taint (:taint @session)})
+                ;; a result says what it leaves out: the agent must not take
+                ;; the first rows for all of them
+                (cond-> (text (json/generate-string rows))
+                  more (update :content conj
+                               {:type "text"
+                                :text (str "These are the first " cap " results; there are more, not shown "
+                                           "(this tool returns at most " cap " a call). Narrow the arguments to see others.")}))))))))))
 
 (defn- answer [{:strs [method params]}]
   (case method

@@ -7,12 +7,12 @@
 
  :tools
  {:tool/local-notes-search
-  {:doc "Notes in your notes folder that mention a text: path, title and the lines around it"
+  {:doc "Notes in your notes folder that mention a text. Each is an excerpt, not the whole note: its path, title, the three lines around the first match, which lines those are, and how many lines the note has"
    :args {:text :string}
    :reads #{:data/note}
    :effect :effect/read
    :egress #{:egress/none}
-   :returns [:note/path :note/title :note/excerpt]
+   :returns [:note/path :note/title :note/excerpt :note/excerpt-lines :note/lines]
    :caps {:per-call 20 :per-session 200}}}
 
  :files
