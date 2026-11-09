@@ -21,6 +21,8 @@
 
      bb serve [--artifact f] [--live f] [--secrets f] [--audit dir] [--confirm dir]
                      (one session per process)
+     live.edn :roots (the user's) the folder each module's file root is:
+                     {:roots {:mod/local-notes {:notes \"/home/me/notes\"}}}
      secrets.edn     (the user's, not in git) {:google {:access-token \"ya29...\"}}
      live.edn        (the user's, not in git) where hosts resolve, and
                      credentials kept elsewhere than secrets.edn: {:hosts {\"gmail.googleapis.com\" \"http://127.0.0.1:8765\"}
@@ -151,13 +153,25 @@
   (some #(let [f (io/file % "bb")] (when (.canExecute f) (.getCanonicalPath f)))
         (str/split (System/getenv "PATH") #":")))
 
-(defn- sandbox
-  "The tool's sandbox command, its placeholders filled for this machine."
+(defn- unbound-roots
+  "The tool's declared roots the user hasn't bound to an existing folder."
   [t]
-  (let [fill {"{root}" (.getCanonicalPath (io/file "."))
-              "{bb}" (bb-path)
-              "{artifact-dir}" (.getCanonicalPath (.getParentFile (.getAbsoluteFile (io/file (:artifact @config)))))}]
-    (mapv #(str/replace % #"\{root\}|\{bb\}|\{artifact-dir\}" fill) (:sandbox t))))
+  (for [r (sort (keys (:roots t)))
+        :let [d (get-in (live) [:roots (:module t) r])]
+        :when (not (and (string? d) (.isDirectory (io/file d))))]
+    r))
+
+(defn- sandbox
+  "The tool's sandbox command, its placeholders filled for this machine:
+   the project, bb, the artifact's folder, and each root's bound folder."
+  [t]
+  (let [fill (merge {"{root}" (.getCanonicalPath (io/file "."))
+                     "{bb}" (bb-path)
+                     "{artifact-dir}" (.getCanonicalPath (.getParentFile (.getAbsoluteFile (io/file (:artifact @config)))))}
+                    (into {} (for [r (keys (:roots t))]
+                               [(str "{root:" (name r) "}")
+                                (.getCanonicalPath (io/file (get-in (live) [:roots (:module t) r])))])))]
+    (mapv #(str/replace % #"\{root\}|\{bb\}|\{artifact-dir\}|\{root:[a-z0-9-]+\}" fill) (:sandbox t))))
 
 (defn- run-tool [tid t args]
   (let [cmd (concat (sandbox t) ["bb" "-cp" (str "sdk/src:router/src:modules/" (:dir t) "/src")
@@ -249,6 +263,12 @@
       (nil? t) (refuse tid "no such tool in the artifact" nil)
       (not (valid-args? t args)) (refuse tid (str "arguments must be exactly " (pr-str (:args t))) nil)
       (>= (get calls tid 0) (:per-session caps 0)) (refuse tid "the session's cap for this tool is reached" :caps)
+      (seq (unbound-roots t))
+      (refuse tid (str "its root " (str/join ", " (unbound-roots t)) " isn't bound to a folder: the user adds "
+                       (binding [*print-namespace-maps* false]
+                         (pr-str {:roots {(:module t) (into {} (for [r (unbound-roots t)] [r "/path/to/folder"]))}}))
+                       " to live.edn")
+              :roots)
       blocked-by (refuse tid (str "the session has read " (str/join ", " blocked-by)
                                   " and this tool's egress " (str/join ", " (sort egress)) " is blocked after it")
                          :session/blocks)

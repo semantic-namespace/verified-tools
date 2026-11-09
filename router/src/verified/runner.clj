@@ -14,7 +14,8 @@
    The result goes out as {:verified/result rows}."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
-            [verified.sdk :as sdk]))
+            [verified.sdk :as sdk]
+            [verified.sdk.files :as files]))
 
 (defn- replay-transport [fixtures]
   (fn [{:keys [route path]}]
@@ -41,11 +42,15 @@
         decl (edn/read-string (slurp (str "modules/" dir "/module.edn")))
         transport (if (= :live (:artifact/mode artifact))
                     (router-transport)
-                    (replay-transport (edn/read-string (slurp (str "modules/" dir "/fixtures.edn")))))
+                    ;; a module with no network has no recorded responses
+                    (replay-transport (let [f (java.io.File. (str "modules/" dir "/fixtures.edn"))]
+                                        (if (.exists f) (edn/read-string (slurp f)) {}))))
         f (requiring-resolve var)
         rows (binding [sdk/*module* decl
                        sdk/*tool* tid
-                       sdk/*transport* transport]
+                       sdk/*transport* transport
+                       ;; each declared root is mounted at /roots/<name> by the sandbox
+                       files/*roots* (into {} (for [r (keys (:files decl))] [r (str "/roots/" (name r))]))]
                (f (edn/read-string args-edn)))]
     (prn {:verified/result rows})
     (flush)))

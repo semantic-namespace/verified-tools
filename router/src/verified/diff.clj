@@ -34,6 +34,9 @@
                 (str "  network  " (str/join "; " (map #(term artifact %) (sort egress))))]
                (for [r (sort (routes t))] (str "             " (route-str r)))
                (when (seq (scopes t)) [(str "  with     your credential, scope " (str/join ", " (sort (scopes t))))])
+               (for [[r {:keys [holds extensions]}] (sort (:roots t))]
+                 (str "  files    the folder you bind as " (name r) ", read-only: " (term artifact holds)
+                      ", " (str/join " " (map #(str "*." %) (sort extensions)))))
                [(str "  returns  " (str/join ", " (map name returns)))
                 (str "  at most  " (:per-call caps) " rows a call, " (:per-session caps) " a session")
                 (str "  asks you " (if confirm "before every call" "never"))]))))
@@ -55,6 +58,14 @@
      (for [r (added routes)] {:tool tid :up true :what (str "new route " (route-str r))})
      (for [r (removed routes)] {:tool tid :up false :what (str "route gone " (route-str r))})
      (for [s (added scopes)] {:tool tid :up true :what (str "uses your credential with scope " s)})
+     (for [r (added (comp keys :roots))]
+       {:tool tid :up true :what (str "reads files from the folder you bind as " (name r)
+                                      " (" (name (get-in b [:roots r :holds])) ")")})
+     (for [r (sort (keys (:roots b)))
+           :let [x (get-in a [:roots r :extensions]) y (get-in b [:roots r :extensions])]
+           :when (and x (seq (remove (set x) y)))]
+       {:tool tid :up true :what (str "reads more kinds of file from " (name r) ": "
+                                      (str/join " " (map #(str "*." %) (sort (remove (set x) y)))))})
      (for [k (added :returns)] {:tool tid :up true :what (str "now returns " (name k))})
      (for [k (removed :returns)] {:tool tid :up false :what (str "no longer returns " (name k))})
      (for [k (sort (set/union (set (keys (:args a))) (set (keys (:args b)))))

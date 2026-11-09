@@ -36,7 +36,7 @@
 (deftest lists-the-artifacts-tools
   (with-session [s "list" {}]
     (let [tools (get-in (u/request s "tools/list" {}) [:result :tools])]
-      (is (= #{"receipts_search" "share_snippet"} (set (map :name tools))))
+      (is (= #{"receipts_search" "share_snippet" "local_notes_search"} (set (map :name tools))))
       (is (str/includes? (:description (first (filter #(= "share_snippet" (:name %)) tools)))
                          "asks the user")))))
 
@@ -126,8 +126,29 @@
       (is error?)
       (is (str/includes? text ":caps")))))
 
+(deftest notes-in-their-folder
+  (let [notes (str u/root "/test/fixtures/notes")]
+    (with-session [s "notes" {:roots {:mod/local-notes {:notes notes}}}]
+      (let [r (rows (u/call s "local_notes_search" {"text" "lisbon"}))]
+        (is (= #{"2026/lisbon.md" "lunch.md"} (set (map :note/path r))))
+        (is (every? #(= #{:note/path :note/title :note/excerpt} (set (keys %))) r)))
+      (is (str/includes? (:text (u/call s "local_notes_search" {"text" "deposit"})) "[card-number masked]"))
+      (is (= [] (rows (u/call s "local_notes_search" {"text" "not a note"}))) "an undeclared extension isn't read"))
+    (testing "a link out of the folder leads nowhere: the sandbox mounts only the folder"
+      (let [d (u/scratch "notes-with-link")]
+        (spit (str d "/mine.md") "# Mine\nnothing here")
+        (fs/create-sym-link (str d "/readme.md") (str u/root "/README.md"))
+        (with-session [s "notes-link" {:roots {:mod/local-notes {:notes d}}}]
+          (is (= [] (rows (u/call s "local_notes_search" {"text" "Verified local tools"})))))))
+    (testing "an unbound root is refused, saying how to bind it"
+      (with-session [s "notes-unbound" {}]
+        (let [{:keys [text error?]} (u/call s "local_notes_search" {"text" "x"})]
+          (is error?)
+          (is (str/includes? text "{:roots {:mod/local-notes {:notes")) text)))))
+
 (deftest masking
   (let [patterns (get-in (u/build! :replay @dir) [:session :redact])
         redact @#'router/redact]
     (is (= "paid with [card-number masked], from [iban masked]"
            (redact patterns "paid with 4111 1111 1111 1111, from ES91 2100 0418 4502 0005 1332")))))
+

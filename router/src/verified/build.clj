@@ -28,16 +28,21 @@
   "The bubblewrap arguments a tool runs under: the system read-only, its own
    module's code and the SDK and runner read-only, no home directory, a
    private /tmp, and no network, ever. A tool that declares egress reaches
-   it through the router, over its stdio, and only on its declared routes.
+   it through the router, over its stdio, and only on its declared routes;
+   one that declares file roots sees only the folders the user binds them
+   to, read-only, at /roots/<name>.
    Machine paths are placeholders the router fills when it runs the tool,
    {root} {bb} {artifact-dir}, so the artifact is the same on any machine
    and two of them diff by what they allow, never by where they were built."
-  [{:keys [dir]}]
+  [{:keys [dir roots]}]
   (let [sys #(when (.exists (io/file %)) ["--ro-bind" % %])
         ro (fn [p] ["--ro-bind" p p])]
     (vec (concat ["bwrap" "--die-with-parent" "--new-session"]
                  (mapcat sys ["/usr" "/bin" "/lib" "/lib64" "/etc/alternatives" "/etc/ld.so.cache"])
                  (mapcat ro ["{bb}" "{root}/sdk/src" "{root}/router/src" (str "{root}/modules/" dir) "{artifact-dir}"])
+                 ;; each declared root: the folder the user binds it to, read-only,
+                 ;; at /roots/<name>; nothing else of the user's files
+                 (mapcat (fn [r] ["--ro-bind" (str "{root:" (name r) "}") (str "/roots/" (name r))]) (sort roots))
                  ["--proc" "/proc" "--dev" "/dev" "--tmpfs" "/tmp" "--setenv" "HOME" "/tmp" "--chdir" "{root}"
                   "--unshare-net"]))))
 
@@ -108,7 +113,8 @@
                             :reads (set (:reads t)) :effect (:effect t) :egress (set (:egress t))
                             :confirm (boolean (:confirm t))
                             :aspects (get-in es [tid :entry :atlas/aspects])
-                            :sandbox (sandbox {:dir dir})
+                            :roots (into (sorted-map) (:files decl))
+                            :sandbox (sandbox {:dir dir :roots (keys (:files decl))})
                             :proxy (proxy-allow decl)}]))]
     {:artifact/mode mode
      :vocabulary {:version (:vocabulary/version vocab)

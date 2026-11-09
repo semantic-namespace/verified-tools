@@ -9,7 +9,7 @@
 (def artifact (delay (u/build! :replay (u/scratch "build"))))
 
 (deftest only-runnable-modules
-  (is (= #{:tool/receipts-search :tool/share-snippet} (set (keys (:tools @artifact)))))
+  (is (= #{:tool/receipts-search :tool/share-snippet :tool/local-notes-search} (set (keys (:tools @artifact)))))
   (is (= {:mod/leaky-receipts 4 :mod/sloppy-notes 7} (update-vals (:excluded @artifact) count)))
   (is (some #(str/includes? % "no code") (get-in @artifact [:excluded :mod/sloppy-notes]))))
 
@@ -22,6 +22,14 @@
         (is (every? #(or (str/starts-with? % "{") (#{"/usr" "/bin" "/lib" "/lib64" "/etc/alternatives" "/etc/ld.so.cache"} %)) bound)
             "the system read-only, and else only the project's placeholders")
         (is (= 1 (count (filter #(str/includes? % "/modules/") bound))) "only its own module")))))
+
+(deftest file-roots
+  (let [{:keys [sandbox roots]} (get-in @artifact [:tools :tool/local-notes-search])]
+    (is (= :data/note (get-in roots [:notes :holds])))
+    (is (some #(= ["--ro-bind" "{root:notes}" "/roots/notes"] %) (partition 3 1 sandbox))
+        "the bound folder, read-only, at /roots/notes")
+    (is (not-any? #(= "{root:notes}" %) (get-in @artifact [:tools :tool/receipts-search :sandbox]))
+        "no other tool sees it")))
 
 (deftest portable
   (let [text (pr-str @artifact)]

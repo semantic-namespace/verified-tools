@@ -124,6 +124,16 @@
         stage (stage! root (fs/path work "stage") dir module-dir
                       #(assoc % dir {:source {:git/url url :git/sha sha}}))
         old (artifact-in root mode)
+        _ (when-let [taken (seq (for [tid (sort (keys (:tools decl)))
+                                      :let [owner (or (get-in old [:tools tid :module])
+                                                      (some (fn [[m _]] (when (and (not= m mid)
+                                                                                   (contains? (:tools (read-edn (fs/path root "modules" (name m) "module.edn"))) tid))
+                                                                          m))
+                                                            (:modules old)))]
+                                      :when (and owner (not= owner mid))]
+                                  (str tid " (" owner ")")))]
+            (throw (ex-info (str "its tool ids are taken by installed modules: " (str/join ", " taken)
+                                 "; a tool id names one tool, in one module") {})))
         new (artifact-in stage mode)
         cs (diff/changes old new)
         why (or (get-in new [:excluded mid])

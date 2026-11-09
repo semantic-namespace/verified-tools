@@ -24,6 +24,33 @@ machine path: the sandbox commands hold `{root}`, `{bb}` and
 `{artifact-dir}`, which the router fills in when it runs a tool. So two
 artifacts differ only in what they allow.
 
+## Files: roots you bind
+
+A module names a root and what it holds, never where it is:
+
+```clojure
+:files {:notes {:holds :data/note :extensions #{"md" "txt" "org"} :max-bytes 500000}}
+```
+
+You bind the root to a folder, per module, in `live.edn`:
+
+```clojure
+{:roots {:mod/local-notes {:notes "/home/me/notes"}}}
+```
+
+- **The sandbox mounts that folder only**, read-only, at `/roots/notes`.
+  Nothing else of your files is there, so a symlink out of the folder
+  leads nowhere.
+- **The SDK reads files from it.** `files/list` and `files/read` accept
+  only the declared extensions, relative paths without `..`, and sizes
+  under the cap.
+- **An unbound root** refuses the call, and the refusal says what to add
+  to `live.edn`.
+- **meta-source checks** that a root holds a vocabulary data term, and that
+  a tool whose code reads a root declares reading what it holds.
+- **`bb add` shows a module's roots and flags changes to them:** a new root,
+  or more kinds of file read from one, is ▲.
+
 ## Installing a module
 
 ```
@@ -201,6 +228,7 @@ past `:session/blocks` from inside the session.
 |---|---|---|
 | `gmail-receipts` | receipts from Gmail, read-only, parsed locally; only receipt rows leave the tool | yes |
 | `share-snippet` | posts a text to a paste service: fine alone, a leak after the session read something private | yes |
+| `local-notes` | notes in a folder you bind, searched locally with no network; only path, title and a few lines leave the tool | yes |
 | `leaky-receipts` | a clean declaration and off-pattern code: a computed route, an HTTP post, a shell call, an undeclared key | no: 4 reasons |
 | `sloppy-notes` | one declaration mistake per check, and no code | no: 7 reasons |
 
