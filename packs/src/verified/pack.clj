@@ -76,6 +76,10 @@
                 :module/version (get-in by-key [:module/version :v])
                 :module/tools (vec (keys (get-in by-key [:tools :v])))
                 :module/egress-hosts (vec (sort (keep :host (vals (get-in by-key [:egress :v])))))
+                ;; each host the module reaches, with the HTTP methods it uses there
+                :module/egress-methods (into (sorted-map)
+                                             (for [[_ {:keys [host routes]}] (get-in by-key [:egress :v]) :when host]
+                                               [host (into (sorted-set) (map (comp first val) routes))]))
                 :module/scopes (vec (sort (mapcat :scopes (vals (get-in by-key [:auth :v])))))}}
        (for [[tid t line] (get-in by-key [:tools :inner])]
          {:file file :row line :kind :module :dev-id tid
@@ -230,6 +234,35 @@
                 [r holds] (get-in e [:entry :module/root-holds])
                 :when (not (and (keyword? holds) (= "data" (namespace holds)) (or (terms holds) (narrows holds))))]
             {:severity :error :problem :root-holds-unknown :dev-id id :root r :holds holds :definition (loc e)}))
+        ;; ---- labels from the boundaries: what a tool's module can reach
+        ;; says what it may claim. Its module's hosts are classified by the
+        ;; provider registry (a host not in it is the internet), the data
+        ;; a provider holds is read by whoever can reach it, and a method
+        ;; other than GET writes (to a provider) or sends (anywhere else).
+        (let [providers (into {} (for [[_ e] entities :when (= :verified/provider (get-in e [:entry :atlas/type]))]
+                                   [(get-in e [:entry :provider/host]) (set (get-in e [:entry :provider/holds]))]))
+              rank (or (:vocabulary/rank vocab) {})
+              mods (into {} (for [[id e] entities :when (= :module (get-in e [:entry :verified/kind]))] [id (:entry e)]))]
+          (for [[tid e] tools
+                :let [t (:entry e) m (get mods (:tool/module t))
+                      egress (set (:tool/egress t)) reads (set (:tool/reads t))
+                      reach (apply max 0 (map #(rank % 0) egress))
+                      effect (first (:tool/effect t))]
+                [host methods] (:module/egress-methods m)
+                :let [holds (get providers host)
+                      cls (if holds :egress/provider :egress/internet)
+                      writes? (seq (remove #{:get} methods))
+                      needs (when writes? (if holds :effect/write :effect/send))]
+                p (concat
+                   (when (< reach (rank cls 0))
+                     [{:severity :error :problem :egress-understated :dev-id tid :host host :class cls
+                       :declared (vec (sort egress)) :definition (loc e)}])
+                   (for [d (sort holds) :when (not (reads d))]
+                     {:severity :error :problem :provider-data-not-read :dev-id tid :host host :holds d :definition (loc e)})
+                   (when (and needs (< (rank effect 0) (rank needs 0)))
+                     [{:severity :error :problem :effect-understated :dev-id tid :host host :effect effect :needs needs
+                       :methods (vec (sort (remove #{:get} methods))) :definition (loc e)}]))]
+            p))
         ;; ---- each module's code against its declaration
         (let [modules (for [[id e] entities :when (= :module (get-in e [:entry :verified/kind]))] [id (:entry e) e])
               code (into {} (for [[_ e] entities :when (= :code (get-in e [:entry :verified/kind]))]
@@ -299,6 +332,16 @@
     :interop-outside-sdk (fn [p id _] (str id " uses Java, " (:what p) ": a module reaches the world only through the SDK"
                                            " (clojure.string and clojure.core for the rest)"))
     :sdk-internal-used (fn [p id _] (str id " uses " (:sym p) ": the SDK's insides are the runner's, a module calls its functions"))
+    :egress-understated (fn [p id _] (str id " declares " (pr-str (:declared p)) ", and its module reaches " (:host p)
+                                          (if (= :egress/provider (:class p))
+                                            ", a registered provider"
+                                            ", which isn't a registered provider")
+                                          ": its egress is " (:class p)))
+    :provider-data-not-read (fn [p id _] (str id " can reach " (:host p) ", which holds " (:holds p)
+                                              ", and doesn't declare reading " (:holds p)))
+    :effect-understated (fn [p id _] (str id " declares " (:effect p) ", and its module uses "
+                                          (clojure.string/join " " (map (comp clojure.string/upper-case name) (:methods p)))
+                                          " on " (:host p) ": its effect is at least " (:needs p)))
     :key-not-declared (fn [p id _] (str id ": " (:var p) " builds a map with " (:key p) ", which no tool declares returning"))}
 
    :pack/describe (fn [entry] (case (:verified/kind entry)

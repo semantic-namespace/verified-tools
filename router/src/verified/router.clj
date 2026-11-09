@@ -21,8 +21,10 @@
 
      bb serve [--artifact f] [--live f] [--secrets f] [--audit dir] [--confirm dir]
                      (one session per process)
-     live.edn :roots (the user's) the folder each module's file root is:
+     live.edn :roots (the user's) the folder each module's file root is,
+                     and, when the user says so, what it holds:
                      {:roots {:mod/local-notes {:notes \"/home/me/notes\"}}}
+                     {:roots {:mod/local-notes {:notes {:path \"/home/me/vault\" :holds :data/secret}}}}
      secrets.edn     (the user's, not in git) {:google {:access-token \"ya29...\"}}
      live.edn        (the user's, not in git) where hosts resolve, and
                      credentials kept elsewhere than secrets.edn: {:hosts {\"gmail.googleapis.com\" \"http://127.0.0.1:8765\"}
@@ -154,13 +156,32 @@
   (some #(let [f (io/file % "bb")] (when (.canExecute f) (.getCanonicalPath f)))
         (str/split (System/getenv "PATH") #":")))
 
+(defn- binding-of
+  "How the user bound a tool's root: a folder, or {:path folder :holds class}
+   when the user says what the folder holds. {:path :holds} either way, the
+   class the module declared unless the user said one."
+  [t r]
+  (let [b (get-in (live) [:roots (:module t) r])
+        declared (get-in t [:roots r :holds])]
+    (cond (string? b) {:path b :holds declared}
+          (map? b) {:path (:path b) :holds (or (:holds b) declared)})))
+
 (defn- unbound-roots
   "The tool's declared roots the user hasn't bound to an existing folder."
   [t]
   (for [r (sort (keys (:roots t)))
-        :let [d (get-in (live) [:roots (:module t) r])]
-        :when (not (and (string? d) (.isDirectory (io/file d))))]
+        :let [{:keys [path]} (binding-of t r)]
+        :when (not (and (string? path) (.isDirectory (io/file path))))]
     r))
+
+(defn- misclassified-roots
+  "The tool's roots the user says hold a class the tool doesn't declare
+   reading: [root class]."
+  [t]
+  (for [r (sort (keys (:roots t)))
+        :let [{:keys [holds]} (binding-of t r)]
+        :when (and holds (not (contains? (:reads t) holds)))]
+    [r holds]))
 
 (defn- sandbox
   "The tool's sandbox command, its placeholders filled for this machine:
@@ -171,7 +192,7 @@
                      "{artifact-dir}" (.getCanonicalPath (.getParentFile (.getAbsoluteFile (io/file (:artifact @config)))))}
                     (into {} (for [r (keys (:roots t))]
                                [(str "{root:" (name r) "}")
-                                (.getCanonicalPath (io/file (get-in (live) [:roots (:module t) r])))])))]
+                                (.getCanonicalPath (io/file (:path (binding-of t r))))])))]
     (mapv #(str/replace % #"\{root\}|\{bb\}|\{artifact-dir\}|\{root:[a-z0-9-]+\}" fill) (:sandbox t))))
 
 (defn- run-tool [tid t args]
@@ -269,6 +290,12 @@
                        (binding [*print-namespace-maps* false]
                          (pr-str {:roots {(:module t) (into {} (for [r (unbound-roots t)] [r "/path/to/folder"]))}}))
                        " to live.edn")
+              :roots)
+      (seq (misclassified-roots t))
+      (refuse tid (str (str/join "; " (for [[r c] (misclassified-roots t)]
+                                         (str "you bound " r " as holding " c)))
+                       ", and this tool declares reading only " (str/join ", " (sort (:reads t)))
+                       ": it doesn't run on data it hasn't declared, so no policy has checked it")
               :roots)
       blocked-by (refuse tid (str "the session has read " (str/join ", " blocked-by)
                                   " and this tool's egress " (str/join ", " (sort egress)) " is blocked after it")
