@@ -6,3 +6,4 @@ secrets/
 confirm/
 target/
 artifact/
+secrets.edn

@@ -19,6 +19,43 @@ bb test            # all of the below, end to end, in seconds
 The artifact is built on the user's machine and isn't in git. Its sandbox
 commands name absolute paths.
 
+## Real Gmail
+
+Credentials live in `secrets.edn`, which only the router reads. It isn't
+in git, and no tool or agent ever sees it:
+
+```clojure
+{:google {:access-token "ya29..."}}
+```
+
+To get a `gmail.readonly` access token, which lasts an hour:
+
+- **The OAuth Playground** (https://developers.google.com/oauthplayground):
+  1. Pick Gmail API v1, `.../auth/gmail.readonly`.
+  2. Authorize, then exchange the code for tokens.
+  3. Copy the access token.
+
+  Revoke it afterwards at https://myaccount.google.com/permissions.
+- **Or your own OAuth client** (a Desktop app, with the Gmail API enabled
+  and yourself as a test user):
+
+  ```sh
+  gcloud auth application-default login --client-id-file=client.json \
+    --scopes=https://www.googleapis.com/auth/gmail.readonly
+  gcloud auth application-default print-access-token
+  ```
+
+The router reads the token on each request, so a new one pasted into
+`secrets.edn` takes effect without a restart. Then:
+
+```sh
+bb build live && bb serve   # live.edn without :hosts: the real gmail.googleapis.com
+```
+
+The receipts query is declared as `label:receipts …`. Without that label,
+change it in `modules/gmail-receipts/module.edn`, for example to
+`category:purchases after:{from} before:{to}`.
+
 ## Tests (`test/`)
 
 - **`check_test`**: the good modules and the vocabulary are clean, and each
@@ -159,9 +196,7 @@ past `:session/blocks` from inside the session.
 
 ## Not done
 
-- **Real Gmail** needs a `gmail.readonly` access token in a file named by
-  `live.edn`, for example from the OAuth playground. The path is the one
-  run against the fake provider; it hasn't been run against Google.
+- **Real Gmail** hasn't been run yet; see below.
 - **Java interop** (`System/getProperty`) isn't flagged by the code check.
   The sandbox covers it.
 - **Taint is per session.** In one live run, the agent itself suggested

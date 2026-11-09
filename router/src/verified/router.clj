@@ -19,10 +19,11 @@
    :confirm {:via :terminal}) by a file the user answers with `bb confirm`
    in their own terminal.
 
-     bb serve [--artifact f] [--live f] [--audit dir] [--confirm dir]
+     bb serve [--artifact f] [--live f] [--secrets f] [--audit dir] [--confirm dir]
                      (one session per process)
-     live.edn        (the user's, not in git) where hosts resolve and where
-                     credentials are: {:hosts {\"gmail.googleapis.com\" \"http://127.0.0.1:8765\"}
+     secrets.edn     (the user's, not in git) {:google {:access-token \"ya29...\"}}
+     live.edn        (the user's, not in git) where hosts resolve, and
+                     credentials kept elsewhere than secrets.edn: {:hosts {\"gmail.googleapis.com\" \"http://127.0.0.1:8765\"}
                                        :credentials {:google {:token-file \"secrets/google.token\"}}
                                        :confirm {:timeout-s 120 :via :terminal}}"
   (:require [babashka.http-client :as http]
@@ -32,8 +33,9 @@
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
-;; where things are; bb serve [--artifact f] [--live f] [--audit dir] [--confirm dir]
-(def config (atom {:artifact "artifact/artifact.edn" :live "live.edn" :audit "audit" :confirm "confirm"}))
+;; where things are; bb serve [--artifact f] [--live f] [--secrets f] [--audit dir] [--confirm dir]
+(def config (atom {:artifact "artifact/artifact.edn" :live "live.edn" :secrets "secrets.edn"
+                   :audit "audit" :confirm "confirm"}))
 
 (def ^:private read-edn
   (memoize (fn [path] (let [f (io/file path)] (if (.exists f) (edn/read-string (slurp f)) {})))))
@@ -108,9 +110,17 @@
              %)
           proxy)))
 
-(defn- token [auth]
-  (when-let [f (get-in (live) [:credentials auth :token-file])]
-    (str/trim (slurp f))))
+(defn- token
+  "The credential a route names: a token file live.edn points to, else the
+   :access-token under its name in secrets.edn (read on each request, so a
+   renewed token is used at once). The placeholder counts as none."
+  [auth]
+  (let [v (if-let [f (get-in (live) [:credentials auth :token-file])]
+            (slurp f)
+            (let [f (io/file (:secrets @config))]
+              (when (.exists f) (get-in (edn/read-string (slurp f)) [auth :access-token]))))]
+    (when (and (string? v) (not (str/blank? v)) (not (str/starts-with? v "PASTE")))
+      (str/trim v))))
 
 (defn- egress!
   "Makes a tool's request when it matches a route its module declares:
@@ -121,7 +131,7 @@
           tok (when (:auth route) (token (:auth route)))]
       (if (and (:auth route) (nil? tok))
         (do (audit! {:tool tid :egress [method host path] :refused "no credential for it in live.edn"})
-            {:verified/refused (str "no credential for " (:auth route))})
+            {:verified/refused (str "no credential for " (:auth route) " (secrets.edn)")})
         (let [resp (http/request {:method method :uri (str base path) :throw false
                                   :query-params (update-keys (or query {}) name)
                                   :headers (cond-> {"accept" "application/json"}

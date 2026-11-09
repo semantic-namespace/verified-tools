@@ -29,10 +29,14 @@
 (def hosts {"gmail.googleapis.com" (str "http://127.0.0.1:" port)
             "paste.example" (str "http://127.0.0.1:" port)})
 
-(defn- opts [name live]
+(defn- opts
+  "A session's files. Its secrets file is its own, never the user's
+   secrets.edn: a real token must not reach the fake provider."
+  [name live & [secrets]]
   (let [d (str @dir "/" name)]
     {:artifact (str @dir "/artifact.edn")
      :live (u/write-edn! (str d "/live.edn") live)
+     :secrets (u/write-edn! (str d "/secrets.edn") (or secrets {}))
      :audit (str d "/audit")
      :confirm (str d "/confirm")}))
 
@@ -57,6 +61,21 @@
     (is (:error? res))
     (is (str/includes? (:text res) "no credential"))
     (is (= before (count (provider-requests))) "nothing reached the provider")))
+
+(deftest token-from-secrets-edn
+  (let [fake (clojure.string/trim (slurp "dev/fake.token"))]
+    (testing "the access token under the route's credential name"
+      (let [before (count (provider-requests))
+            s (u/start (opts "secrets" {:hosts hosts} {:google {:access-token fake}}))
+            res (try (u/call s "receipts_search" {"from" "2026-10-01" "to" "2026-10-31"})
+                     (finally (u/stop s)))]
+        (is (not (:error? res)) (:text res))
+        (is (every? :authorized (drop before (provider-requests))))))
+    (testing "the placeholder counts as none"
+      (let [s (u/start (opts "placeholder" {:hosts hosts} {:google {:access-token "PASTE-YOUR-ya29-TOKEN-HERE"}}))
+            res (try (u/call s "receipts_search" {"from" "2026-10-01" "to" "2026-10-31"})
+                     (finally (u/stop s)))]
+        (is (str/includes? (:text res) "no credential"))))))
 
 (deftest sending-what-the-user-allowed
   (let [before (count (provider-requests))

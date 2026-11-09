@@ -20,6 +20,7 @@
     (fs/create-dirs d)
     {:artifact (str @dir "/artifact.edn")
      :live (u/write-edn! (str d "/live.edn") live)
+     :secrets (u/write-edn! (str d "/secrets.edn") {})
      :audit (str d "/audit")
      :confirm (str d "/confirm")}))
 
