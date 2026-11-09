@@ -15,7 +15,8 @@
    (^{:module/tool id}) are the declared tools; it reaches the world only
    through the SDK (verified.sdk.http/call, query/fill, files/read,
    out/rows), each called with a literal keyword the declaration names; it
-   calls nothing outside it (an HTTP client, a shell, eval); and every
+   calls nothing outside it (an HTTP client, a shell, eval, Java interop
+   but a few pure classes, the SDK's own dynamic vars); and every
    qualified key it writes in a map is one its tools declare returning."
   (:require [clojure.string :as str]
             [clojure.walk :as walk]
@@ -35,7 +36,16 @@
      babashka.process babashka.fs clojure.java.io babashka.pods babashka.deps})
 
 (def ^:private forbidden-core
-  '#{eval load-string load-file read-string requiring-resolve resolve intern alter-var-root slurp spit})
+  '#{eval load load-string load-file read-string requiring-resolve resolve ns-resolve find-var intern
+     alter-var-root var-set with-redefs slurp spit})
+
+;; Java a module may use: pure classes, no I/O, no state
+(def ^:private allowed-classes #{"java.lang.Math"})
+
+;; the SDK as a module may use it: its functions, and the pure parsers; its
+;; dynamic vars (*module* *transport* *roots*) are the runner's to bind
+(defn- sdk-var? [ns-sym name-sym]
+  (or (contains? (get sdk-fns ns-sym) name-sym) (= 'verified.sdk.parse ns-sym)))
 
 (defn- qualified-map-keys [form]
   (let [acc (volatile! #{})]
@@ -109,6 +119,8 @@
                                          :when (.isFile (java.io.File. d "module.edn"))]
                                      (str "modules/" (.getName d) "/module.edn"))))))
    :pack/var-meta [:module/tool]
+   ;; Java class usages and method calls too: a module's interop is checked
+   :pack/kondo-config {:analysis {:java-class-usages true :instance-invocations true}}
    ;; a module's code: each var it defines (a tool, or a helper whose maps
    ;; are read), each SDK call, each call outside the SDK
    :pack/find
@@ -127,7 +139,24 @@
                          (or (forbidden-nses (:to u))
                              (and (= 'clojure.core (:to u)) (forbidden-core (:name u)))))]
           {:filename (:filename u) :row (:row u) :name-row (:name-row u) :name-col (:name-col u)
-           :site :forbidden :sym (symbol (str (:to u)) (str (:name u)))}))))
+           :site :forbidden :sym (symbol (str (:to u)) (str (:name u)))})
+        ;; Java: a class used (a static call, a constructor), or a method
+        ;; called on an object, whose class nothing here can know
+        (for [u (:java-class-usages analysis)
+              :when (and (in-module? u) (not (allowed-classes (:class u))))]
+          {:filename (:filename u) :row (:row u) :name-row (:row u) :name-col (:col u)
+           :site :interop :what (str (:class u) (when (:method-name u) (str "/" (:method-name u))))})
+        (for [u (:var-usages analysis)
+              :when (and (in-module? u) (= 'clojure.core (:to u)) (= '. (:name u)))]
+          {:filename (:filename u) :row (:row u) :name-row (:row u) :name-col (:col u)
+           :site :interop :what "a method called on an object"})
+        ;; the SDK's insides: anything of verified.* but its functions
+        (for [u (:var-usages analysis)
+              :when (and (in-module? u)
+                         (str/starts-with? (str (:to u)) "verified.")
+                         (not (sdk-var? (:to u) (:name u))))]
+          {:filename (:filename u) :row (:row u) :name-row (:name-row u) :name-col (:name-col u)
+           :site :internal :sym (symbol (str (:to u)) (str (:name u)))}))))
    :pack/read
    (fn [sites {:keys [form-at]} _]
      (let [dir (some (comp module-dir :filename) sites)
@@ -139,8 +168,10 @@
                      :sdk (let [form (form-at name-row name-col)
                                 arg (when (seq? form) (second form))]
                             {:calls #{[(:fn s) (if (keyword? arg) arg :computed) (:from-var s) filename row]}})
-                     :forbidden {:forbidden #{[(:sym s) filename row]}}))
-           merged (apply merge-with into {:defs #{} :keys #{} :calls #{} :forbidden #{}} facts)]
+                     :forbidden {:forbidden #{[(:sym s) filename row]}}
+                     :interop {:interop #{[(:what s) filename row]}}
+                     :internal {:internal #{[(:sym s) filename row]}}))
+           merged (apply merge-with into {:defs #{} :keys #{} :calls #{} :forbidden #{} :interop #{} :internal #{}} facts)]
        (if-not dir
          []
          [{:row (:row (first sites)) :kind :module :dev-id (keyword "module-code" dir)
@@ -148,7 +179,9 @@
                    :code/defs (vec (sort-by str (:defs merged)))
                    :code/keys (vec (sort-by str (:keys merged)))
                    :code/calls (vec (sort-by str (:calls merged)))
-                   :code/forbidden (vec (sort-by str (:forbidden merged)))}}])))
+                   :code/forbidden (vec (sort-by str (:forbidden merged)))
+                   :code/interop (vec (sort-by str (:interop merged)))
+                   :code/internal (vec (sort-by str (:internal merged)))}}])))
    :pack/read-data (fn [files _]
                      (vec (mapcat (fn [{:keys [file text]}] (module-results file text)) files)))
 
@@ -226,6 +259,10 @@
                         :dev-id mid :sdk fname :arg arg :definition (at f row)})
                      (for [[sym f row] (:code/forbidden c)]
                        {:severity :error :problem :call-outside-sdk :dev-id mid :sym sym :definition (at f row)})
+                     (for [[what f row] (:code/interop c)]
+                       {:severity :error :problem :interop-outside-sdk :dev-id mid :what what :definition (at f row)})
+                     (for [[sym f row] (:code/internal c)]
+                       {:severity :error :problem :sdk-internal-used :dev-id mid :sym sym :definition (at f row)})
                      ;; what a root holds is read by whichever tool reads files from it:
                      ;; the tool whose function calls files/*, else (a helper calls it)
                      ;; every tool of the module
@@ -259,6 +296,9 @@
                                           ", and doesn't declare reading " (:holds p)))
     :root-holds-unknown (fn [p id _] (str id "'s root " (:root p) " holds " (pr-str (:holds p))
                                           ": a root says which :data/* class it holds, a core term or a refinement"))
+    :interop-outside-sdk (fn [p id _] (str id " uses Java, " (:what p) ": a module reaches the world only through the SDK"
+                                           " (clojure.string and clojure.core for the rest)"))
+    :sdk-internal-used (fn [p id _] (str id " uses " (:sym p) ": the SDK's insides are the runner's, a module calls its functions"))
     :key-not-declared (fn [p id _] (str id ": " (:var p) " builds a map with " (:key p) ", which no tool declares returning"))}
 
    :pack/describe (fn [entry] (case (:verified/kind entry)

@@ -26,9 +26,9 @@
 
 (deftest leaky-receipts-code-against-declaration
   (let [errors (in "leaky-receipts" :error)]
-    (is (= 4 (count errors)) (str/join "\n" errors))
+    (is (= 5 (count errors)) (str/join "\n" errors))
     (testing "each code mistake by its check"
-      (doseq [check ["sdk-arg-not-literal" "call-outside-sdk" "key-not-declared"]]
+      (doseq [check ["sdk-arg-not-literal" "call-outside-sdk" "key-not-declared" "interop-outside-sdk"]]
         (is (some #(str/includes? % check) errors) check))
       (is (= 2 (count (filter #(str/includes? % "call-outside-sdk") errors)))
           "the HTTP post and the shell call"))))

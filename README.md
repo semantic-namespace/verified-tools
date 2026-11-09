@@ -179,7 +179,9 @@ first.
   - the vocabulary's grammar;
   - the rules derived from the refinements;
   - code against declaration: tool functions, literal and declared SDK
-    arguments, no calls outside the SDK, only declared result keys.
+    arguments, no calls outside the SDK, no Java interop (beyond
+    `java.lang.Math`), none of the SDK's insides (its dynamic vars are the
+    runner's to bind), only declared result keys.
 - **`router/`**:
   - `build.clj` writes the artifact, with its SHA-256;
   - `router.clj` is the MCP server. For each call it checks:
@@ -276,8 +278,6 @@ past `:session/blocks` from inside the session.
 ## Not done
 
 - **Real Gmail** hasn't been run yet; see below.
-- **Java interop** (`System/getProperty`) isn't flagged by the code check.
-  The sandbox covers it.
 - **Taint is per session.** In one live run, the agent itself suggested
   pasting the summary into a fresh session. That is the user's own choice
   to make, and it still goes through the confirmation, but the policy
