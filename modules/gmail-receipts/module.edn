@@ -25,4 +25,4 @@
            :token :keychain/gmail}}
 
  :queries
- {:receipts "label:receipts after:{from} before:{to}"}}
+ {:receipts "subject:(receipt OR invoice OR \"order confirmation\" OR recibo OR factura OR \"tu pedido\") after:{from} before:{to}"}}
