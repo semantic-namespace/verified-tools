@@ -134,40 +134,35 @@ How `bb add` works:
 
 ## Real Gmail
 
-Credentials live in `secrets.edn`, which only the router reads. It isn't
-in git, and no tool or agent ever sees it:
+Credentials are granted once with your own OAuth client. No third party
+holds them.
 
-```clojure
-{:google {:access-token "ya29..."}}
-```
+1. In your own Google Cloud project, enable the Gmail API and create an
+   OAuth client of type *Desktop app*. While the app is in Testing, add
+   yourself as a test user.
+2. Put the client in `secrets.edn`, which isn't in git:
 
-To get a `gmail.readonly` access token, which lasts an hour:
+   ```clojure
+   {:google {:client-id "…apps.googleusercontent.com" :client-secret "…"}}
+   ```
+3. Run `bb auth google`. It asks for exactly the scopes the installed tools
+   declare (today `gmail.readonly`) on Google's consent page, receives the
+   answer on a local port (PKCE, a fresh state), and writes the refresh
+   token to `secrets.edn`, readable by you only.
 
-- **The OAuth Playground** (https://developers.google.com/oauthplayground):
-  1. Pick Gmail API v1, `.../auth/gmail.readonly`.
-  2. Authorize, then exchange the code for tokens.
-  3. Copy the access token.
+From then on, the router turns the refresh token into access tokens as
+needed:
 
-  Revoke it afterwards at https://myaccount.google.com/permissions.
-- **Or your own OAuth client** (a Desktop app, with the Gmail API enabled
-  and yourself as a test user):
+- it keeps each one until a minute before it expires;
+- it renews once after a 401;
+- it refuses a token missing a declared scope, saying to run `bb auth`
+  again.
 
-  ```sh
-  gcloud auth application-default login --client-id-file=client.json \
-    --scopes=https://www.googleapis.com/auth/gmail.readonly
-  gcloud auth application-default print-access-token
-  ```
+A tool never holds a token. While the OAuth app is in Testing, Google
+expires refresh tokens after 7 days, so run `bb auth google` again then. A
+pasted `:access-token` still works, for an hour.
 
-The router reads the token on each request, so a new one pasted into
-`secrets.edn` takes effect without a restart. Then:
-
-```sh
-bb build live && bb serve   # live.edn without :hosts: the real gmail.googleapis.com
-```
-
-The receipts query is declared as `label:receipts …`. Without that label,
-change it in `modules/gmail-receipts/module.edn`, for example to
-`category:purchases after:{from} before:{to}`.
+The receipts query is declared in `modules/gmail-receipts/module.edn`.
 
 ## Tests (`test/`)
 

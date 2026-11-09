@@ -9,6 +9,8 @@
             [clojure.test :refer [deftest is testing use-fixtures]]
             [fake-provider :as fp]
             [org.httpkit.server :as server]
+            [babashka.http-client :as http]
+            [verified.oauth :as oauth]
             [verified.router :as router]
             [verified.test-util :as u]))
 
@@ -70,7 +72,7 @@
             res (try (u/call s "receipts_search" {"from" "2026-10-01" "to" "2026-10-31"})
                      (finally (u/stop s)))]
         (is (not (:error? res)) (:text res))
-        (is (every? :authorized (drop before (provider-requests))))))
+        (is (every? :authorized (filter #(str/starts-with? (:uri %) "/gmail/") (drop before (provider-requests)))))))
     (testing "the placeholder counts as none"
       (let [s (u/start (opts "placeholder" {:hosts hosts} {:google {:access-token "PASTE-YOUR-ya29-TOKEN-HERE"}}))
             res (try (u/call s "receipts_search" {"from" "2026-10-01" "to" "2026-10-31"})
@@ -88,6 +90,55 @@
         (is (= {:text "Lunch on Thursday"} (json/parse-string (:body sent) true)) "exactly the allowed text")
         (is (not (:authorized sent)) "no Gmail token to the paste service"))
       (finally (u/stop s)))))
+
+(def oauth-live
+  {:hosts hosts
+   :oauth {:google {:auth-uri (str "http://127.0.0.1:" port "/oauth/auth")
+                    :token-uri (str "http://127.0.0.1:" port "/oauth/token")}}})
+
+(defn- granted-secrets!
+  "Runs bb auth's flow against the fake provider, the consent page opened
+   by a client that follows its redirect: the secrets it writes."
+  [name]
+  (let [f (str @dir "/" name "-secrets.edn")]
+    (oauth/write-secrets! f {:google fp/client})
+    (oauth/login! {:auth :google :scopes (oauth/scopes-for (edn/read-string (slurp (str @dir "/artifact.edn"))) :google)
+                   :secrets-file f :live oauth-live :timeout-ms 10000
+                   :open (fn [url] (http/get url {:throw false}))})
+    f))
+
+(deftest granting-a-credential
+  (let [f (granted-secrets! "grant")
+        cred (:google (oauth/read-secrets f))]
+    (is (str/starts-with? (:refresh-token cred) "fake-refresh-"))
+    (is (= #{"https://www.googleapis.com/auth/gmail.readonly"} (:scopes cred)) "exactly the declared scope")
+    (is (nil? (:access-token cred)))
+    (is (= "rw-------" (java.nio.file.attribute.PosixFilePermissions/toString (fs/posix-file-permissions f))) "readable by the user only"))
+  (testing "no client, no grant"
+    (let [f (str @dir "/no-client-secrets.edn")]
+      (oauth/write-secrets! f {})
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no :google :client-id"
+                            (oauth/login! {:auth :google :scopes #{"x"} :secrets-file f :live oauth-live :open identity}))))))
+
+(defn- receipts [s] (u/call s "receipts_search" {"from" "2026-10-01" "to" "2026-10-31"}))
+
+(deftest the-router-renews-what-was-granted
+  (let [secrets (oauth/read-secrets (granted-secrets! "renew"))
+        before (count (provider-requests))
+        s (u/start (opts "renew" oauth-live secrets))]
+    (try
+      (is (= 4 (count (json/parse-string (:text (receipts s))))) "an access token minted from the refresh token")
+      (is (every? :authorized (filter #(str/starts-with? (:uri %) "/gmail/") (drop before (provider-requests)))))
+      (http/post (str "http://127.0.0.1:" port "/oauth/test/expire"))
+      (is (= 4 (count (json/parse-string (:text (receipts s))))) "a 401 renews the token once, and the call goes through")
+      (finally (u/stop s)))))
+
+(deftest a-token-without-the-declared-scope-is-refused
+  (swap! fp/oauth assoc-in [:refresh "fake-refresh-narrow"] "openid email")
+  (let [s (u/start (opts "narrow" oauth-live {:google (assoc fp/client :refresh-token "fake-refresh-narrow")}))
+        {:keys [text error?]} (try (receipts s) (finally (u/stop s)))]
+    (is error?)
+    (is (str/includes? text "isn't granted https://www.googleapis.com/auth/gmail.readonly: run bb auth google") text)))
 
 (deftest forged-requests
   (swap! router/config merge (opts "forged" with-token))
