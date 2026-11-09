@@ -7,3 +7,6 @@ confirm/
 target/
 artifact/
 secrets.edn
+secrets.edn~
+#secrets.edn#
+.#secrets.edn
