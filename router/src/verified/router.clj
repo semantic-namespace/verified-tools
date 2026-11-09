@@ -37,7 +37,8 @@
             [cheshire.core :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [verified.oauth :as oauth]))
 
 ;; where things are; bb serve [--artifact f] [--live f] [--secrets f] [--audit dir] [--confirm dir]
 (def config (atom {:artifact "artifact/artifact.edn" :live "live.edn" :secrets "secrets.edn"
@@ -137,34 +138,66 @@
              %)
           proxy)))
 
-(defn- token
-  "The credential a route names: a token file live.edn points to, else the
-   :access-token under its name in secrets.edn (read on each request, so a
-   renewed token is used at once). The placeholder counts as none."
-  [auth]
-  (let [v (if-let [f (get-in (live) [:credentials auth :token-file])]
-            (slurp f)
-            (let [f (io/file (:secrets @config))]
-              (when (.exists f) (get-in (edn/read-string (slurp f)) [auth :access-token]))))]
-    (when (and (string? v) (not (str/blank? v)) (not (str/starts-with? v "PASTE")))
-      (str/trim v))))
+(def ^:private tokens "auth -> {:access-token :expires-at :scopes}, minted from a refresh token" (atom {}))
+
+(defn- secrets [] (let [f (io/file (:secrets @config))] (if (.exists f) (edn/read-string (slurp f)) {})))
+
+(defn- credential
+  "The token for a route's credential, {:token t} or {:refused why}: a token
+   file live.edn points to; else, from secrets.edn, an access token minted
+   from the credential's refresh token (bb auth), kept until a minute before
+   it expires; else a pasted :access-token. A minted token lacking a scope
+   the route declares is refused, saying so."
+  [auth needed]
+  (let [placeholder? #(or (not (string? %)) (str/blank? %) (str/starts-with? % "PASTE"))
+        cred (get (secrets) auth)]
+    (cond
+      (get-in (live) [:credentials auth :token-file])
+      {:token (str/trim (slurp (get-in (live) [:credentials auth :token-file])))}
+
+      (and (:refresh-token cred) (not (placeholder? (:refresh-token cred))))
+      (let [cached (get @tokens auth)
+            fresh (if (and cached (> (:expires-at cached) (+ (System/currentTimeMillis) 60000)))
+                    cached
+                    (try (let [t (oauth/refresh! cred (:token-uri (oauth/endpoints (live) auth)))]
+                           (swap! tokens assoc auth t)
+                           t)
+                         (catch clojure.lang.ExceptionInfo e {:error (ex-message e)})))
+            missing (remove (set (:scopes fresh)) needed)]
+        (cond (:error fresh) {:refused (str "renewing " auth " failed (" (:error fresh) "): run bb auth " (name auth))}
+              (seq missing) {:refused (str auth " isn't granted " (str/join " " missing) ": run bb auth " (name auth))}
+              :else {:token (:access-token fresh)}))
+
+      (not (placeholder? (:access-token cred)))
+      {:token (str/trim (:access-token cred))}
+
+      :else {:refused (str "no credential for " auth " (secrets.edn): run bb auth " (name auth))})))
+
+(defn- send-request [base {:keys [method path query body]} tok]
+  (http/request {:method method :uri (str base path) :throw false
+                 :query-params (update-keys (or query {}) name)
+                 :headers (cond-> {"accept" "application/json"}
+                            tok (assoc "authorization" (str "Bearer " tok))
+                            body (assoc "content-type" "application/json"))
+                 :body (some-> body json/generate-string)}))
 
 (defn- egress!
   "Makes a tool's request when it matches a route its module declares:
-   {:verified/response body} or {:verified/refused why}."
-  [tid t {:keys [host method path query body] :as req}]
+   {:verified/response body} or {:verified/refused why}. A 401 from the
+   provider renews a minted token once and tries again."
+  [tid t {:keys [host method path] :as req}]
   (if-let [route (allowed-route t req)]
     (let [base (get-in (live) [:hosts host] (str "https://" host))
-          tok (when (:auth route) (token (:auth route)))]
-      (if (and (:auth route) (nil? tok))
-        (do (audit! {:tool tid :egress [method host path] :refused "no credential for it in live.edn"})
-            {:verified/refused (str "no credential for " (:auth route) " (secrets.edn)")})
-        (let [resp (http/request {:method method :uri (str base path) :throw false
-                                  :query-params (update-keys (or query {}) name)
-                                  :headers (cond-> {"accept" "application/json"}
-                                             tok (assoc "authorization" (str "Bearer " tok))
-                                             body (assoc "content-type" "application/json"))
-                                  :body (some-> body json/generate-string)})]
+          cred (when (:auth route) (credential (:auth route) (:scopes route)))]
+      (if (:refused cred)
+        (do (audit! {:tool tid :egress [method host path] :refused (:refused cred)})
+            {:verified/refused (:refused cred)})
+        (let [resp (send-request base req (:token cred))
+              resp (if (and (= 401 (:status resp)) (get @tokens (:auth route)))
+                     (do (swap! tokens dissoc (:auth route))
+                         (let [again (credential (:auth route) (:scopes route))]
+                           (if (:token again) (send-request base req (:token again)) resp)))
+                     resp)]
           (audit! {:tool tid :egress [method host path] :status (:status resp)})
           (if (<= 200 (:status resp) 299)
             {:verified/response (json/parse-string (:body resp) true)}

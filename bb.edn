@@ -2,6 +2,7 @@
 ;; bb build   the artifact: what the router may serve, and why the rest is out
 ;; bb serve   the router, an MCP server over stdio, serving the artifact
 ;; bb confirm  the user answering what the router asks, in their own terminal
+;; bb auth     grants a credential the installed tools declare (OAuth, your own client)
 ;; bb add      installs a module pinned by SHA, after showing what it may do
 ;; bb remove   removes one, after showing what goes with it
 ;; bb diff     what changes between two artifacts
@@ -21,6 +22,9 @@
          confirm {:doc "What the router is waiting to ask, and the answer: bb confirm [<id> yes|no]"
                   :requires ([verified.confirm :as confirm])
                   :task (apply confirm/-main *command-line-args*)}
+         auth {:doc "Grants a credential for exactly the scopes the installed tools declare: bb auth google [--no-browser]"
+               :requires ([verified.oauth :as oauth])
+               :task (apply oauth/-main *command-line-args*)}
          add {:doc "Installs a module after showing what it may do: bb add <git-url> <sha> [--path p] [--yes|--dry-run]"
               :requires ([verified.install :as install])
               :task (apply install/add-main *command-line-args*)}
