@@ -7,6 +7,7 @@
 (def ^:dynamic *module* "The module's declaration, as module.edn says it." nil)
 (def ^:dynamic *tool* "The id of the tool running." nil)
 (def ^:dynamic *transport* "(fn [request]) → response, for http/call." nil)
+(def ^:dynamic *more* "An atom out/rows sets true when its tool found more rows than its per-call cap." nil)
 
 (defn refuse
   "Stops a call the declaration doesn't allow: an ex-info naming why."

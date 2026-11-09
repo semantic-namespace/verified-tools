@@ -11,7 +11,8 @@
               EDN line on stdin. The router checks the request against the
               declared routes, adds the token, and makes the call; the token
               never enters the sandbox.
-   The result goes out as {:verified/result rows}."
+   The result goes out as {:verified/result rows :verified/more bool}:
+   more is whether the tool found rows past its per-call cap."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [verified.sdk :as sdk]
@@ -46,11 +47,13 @@
                     (replay-transport (let [f (java.io.File. (str "modules/" dir "/fixtures.edn"))]
                                         (if (.exists f) (edn/read-string (slurp f)) {}))))
         f (requiring-resolve var)
-        rows (binding [sdk/*module* decl
+        more (atom false)
+        rows (binding [sdk/*more* more
+                       sdk/*module* decl
                        sdk/*tool* tid
                        sdk/*transport* transport
                        ;; each declared root is mounted at /roots/<name> by the sandbox
                        files/*roots* (into {} (for [r (keys (:files decl))] [r (str "/roots/" (name r))]))]
                (f (edn/read-string args-edn)))]
-    (prn {:verified/result rows})
+    (prn {:verified/result rows :verified/more @more})
     (flush)))

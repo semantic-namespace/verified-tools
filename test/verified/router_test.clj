@@ -131,7 +131,10 @@
     (with-session [s "notes" {:roots {:mod/local-notes {:notes notes}}}]
       (let [r (rows (u/call s "local_notes_search" {"text" "lisbon"}))]
         (is (= #{"2026/lisbon.md" "lunch.md"} (set (map :note/path r))))
-        (is (every? #(= #{:note/path :note/title :note/excerpt} (set (keys %))) r)))
+        (is (every? #(= #{:note/path :note/title :note/excerpt :note/excerpt-lines :note/lines} (set (keys %))) r))
+        (is (= {:note/excerpt-lines "1-3" :note/lines 5}
+               (select-keys (first (filter #(= "2026/lisbon.md" (:note/path %)) r)) [:note/excerpt-lines :note/lines]))
+            "an excerpt says which lines it is, of how many"))
       (is (str/includes? (:text (u/call s "local_notes_search" {"text" "deposit"})) "[card-number masked]"))
       (is (= [] (rows (u/call s "local_notes_search" {"text" "not a note"}))) "an undeclared extension isn't read"))
     (testing "a link out of the folder leads nowhere: the sandbox mounts only the folder"
@@ -145,6 +148,17 @@
         (let [{:keys [text error?]} (u/call s "local_notes_search" {"text" "x"})]
           (is error?)
           (is (str/includes? text "{:roots {:mod/local-notes {:notes")) text)))))
+
+(deftest a-result-says-what-it-leaves-out
+  (let [d (u/scratch "many-notes")]
+    (dotimes [i 25] (spit (str d "/n" i ".md") (str "# Note " i "\nabout lisbon")))
+    (with-session [s "many" {:roots {:mod/local-notes {:notes d}}}]
+      (let [msg (u/request s "tools/call" {:name "local_notes_search" :arguments {"text" "lisbon"}})
+            [rows-item note] (get-in msg [:result :content])]
+        (is (= 20 (count (json/parse-string (:text rows-item)))) "the per-call cap")
+        (is (str/includes? (:text note) "first 20 results; there are more") (:text note)))
+      (let [msg (u/request s "tools/call" {:name "local_notes_search" :arguments {"text" "Note 7"}})]
+        (is (= 1 (count (get-in msg [:result :content]))) "no note when nothing is left out")))))
 
 (deftest masking
   (let [patterns (get-in (u/build! :replay @dir) [:session :redact])
