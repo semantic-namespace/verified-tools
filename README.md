@@ -24,6 +24,34 @@ machine path: the sandbox commands hold `{root}`, `{bb}` and
 `{artifact-dir}`, which the router fills in when it runs a tool. So two
 artifacts differ only in what they allow.
 
+## Labels from the boundaries
+
+What a module says it reads, does and reaches is checked against what it
+can reach. It is never simply believed:
+
+- **The provider registry.** The vocabulary lists the hosts that already hold
+  your data, and which data: `:provider/gmail` holds `:data/email`. A host in
+  the registry is `:egress/provider`. Any other host is `:egress/internet`,
+  whatever the module calls it.
+- **Egress.** A tool's declared egress must reach at least as far as every
+  host its module reaches. Calling `evil.example` a provider is an error.
+- **Data.** A tool that can reach a provider must declare reading what the
+  provider holds.
+- **Effects.** A module with only GET routes reads. Any other method writes,
+  to a provider, or sends, anywhere else. A tool can't declare less.
+- **Roots.** You can say what a folder holds when you bind it:
+  `{:notes {:path "/home/me/vault" :holds :data/secret}}`. A tool that
+  doesn't declare reading that class won't run on the folder, so no policy
+  goes unchecked.
+
+The review that `bb add` shows marks each host as "a registered provider of
+…" or "not a registered provider: the internet".
+
+Not done yet: tying "provider" to where a session's data came from, so that
+egress to host X is allowed only for data read from X (the audit's gap 2).
+The registry is per host. `www.googleapis.com` serves many APIs, so it would
+need host and path prefix.
+
 ## Files: roots you bind
 
 A module names a root and what it holds, never where it is:

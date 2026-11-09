@@ -32,7 +32,12 @@
                 (str "  reads    " (str/join "; " (map #(term artifact %) (sort reads))))
                 (str "  does     " (term artifact effect))
                 (str "  network  " (str/join "; " (map #(term artifact %) (sort egress))))]
-               (for [r (sort (routes t))] (str "             " (route-str r)))
+               (for [r (sort (routes t))
+                     :let [host (second r) holds (get-in artifact [:vocabulary :providers host])]]
+                 (str "             " (route-str r)
+                      (if holds
+                        (str "   (a registered provider of " (str/join ", " (map name (sort holds))) ")")
+                        "   (not a registered provider: the internet)")))
                (when (seq (scopes t)) [(str "  with     your credential, scope " (str/join ", " (sort (scopes t))))])
                (for [[r {:keys [holds extensions]}] (sort (:roots t))]
                  (str "  files    the folder you bind as " (name r) ", read-only: " (term artifact holds)

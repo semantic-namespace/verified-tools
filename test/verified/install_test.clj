@@ -199,6 +199,61 @@
     (is (str/includes? why "uses verified.sdk/*transport*"))
     (is (str/includes? why "calls clojure.core/with-redefs"))))
 
+(defn- module-with
+  "A one-tool module, :mod/probe, whose tool declares reads, effect and
+   egress, and whose module reaches egress (a map as module.edn writes it)."
+  [{:keys [reads effect egress-class egress]}]
+  {"module.edn" (str "{:module/id :mod/probe
+ :module/version \"0.1.0\"
+ :tools
+ {:tool/probe
+  {:doc \"A probe\"
+   :args {:text :string}
+   :reads " (pr-str reads) "
+   :effect " (pr-str effect) "
+   :egress " (pr-str egress-class) "
+   :confirm true
+   :returns [:probe/n]
+   :caps {:per-call 1 :per-session 1}}}
+ :egress " (binding [*print-namespace-maps* false] (pr-str egress)) "}
+")
+   "src/mod/probe.clj" "(ns mod.probe (:require [verified.sdk.out :as out]))
+(defn ^{:module/tool :tool/probe} probe [{:keys [text]}]
+  (out/rows :tool/probe [{:probe/n (count text)}]))"})
+
+(defn- refused-with [name files]
+  (let [d (project!) {:keys [url sha]} (repo! name files)
+        [out res] (run #(install/add! {:root d :url url :sha sha :yes true}))]
+    (is (not (:installed res)) out)
+    (str/join "\n" (:excluded res))))
+
+(deftest labels-come-from-the-boundaries
+  (testing "a host not in the provider registry is the internet, whatever the module says"
+    (is (str/includes? (refused-with "self-styled-provider"
+                                     (module-with {:reads #{:data/note} :effect :effect/read :egress-class #{:egress/provider}
+                                                   :egress {:x {:host "evil.example" :routes {:get [:get "/x"]}}}}))
+                       "evil.example, which isn't a registered provider: its egress is :egress/internet")))
+  (testing "a tool that can reach a provider reads what it holds"
+    (is (str/includes? (refused-with "gmail-without-email"
+                                     (module-with {:reads #{:data/note} :effect :effect/read :egress-class #{:egress/provider}
+                                                   :egress {:gmail {:host "gmail.googleapis.com" :routes {:list [:get "/gmail/v1/users/me/messages"]}}}}))
+                       "can reach gmail.googleapis.com, which holds :data/email, and doesn't declare reading :data/email")))
+  (testing "a method other than GET writes, to a provider, or sends, anywhere else"
+    (is (str/includes? (refused-with "post-to-the-internet"
+                                     (module-with {:reads #{:data/note} :effect :effect/read :egress-class #{:egress/internet}
+                                                   :egress {:x {:host "paste.example" :routes {:create [:post "/s"]}}}}))
+                       "uses POST on paste.example: its effect is at least :effect/send"))
+    (is (str/includes? (refused-with "delete-at-the-provider"
+                                     (module-with {:reads #{:data/email} :effect :effect/read :egress-class #{:egress/provider}
+                                                   :egress {:gmail {:host "gmail.googleapis.com" :routes {:trash [:delete "/gmail/v1/users/me/messages/{id}"]}}}}))
+                       "uses DELETE on gmail.googleapis.com: its effect is at least :effect/write")))
+  (testing "the review says which hosts are providers"
+    (let [d (project!)
+          {:keys [url sha]} (repo! "gmail-ok" (module-with {:reads #{:data/email} :effect :effect/read :egress-class #{:egress/provider}
+                                                            :egress {:gmail {:host "gmail.googleapis.com" :routes {:list [:get "/gmail/v1/users/me/messages"]}}}}))
+          [out _] (run #(install/add! {:root d :url url :sha sha :dry-run true}))]
+      (is (str/includes? out "GET gmail.googleapis.com/gmail/v1/users/me/messages   (a registered provider of email)") out))))
+
 (deftest pinned-by-sha-only
   (let [d (project!) {:keys [url]} (repo! "word-count-branch" word-count)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"full commit SHA"

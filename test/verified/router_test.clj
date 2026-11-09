@@ -143,6 +143,13 @@
         (fs/create-sym-link (str d "/readme.md") (str u/root "/README.md"))
         (with-session [s "notes-link" {:roots {:mod/local-notes {:notes d}}}]
           (is (= [] (rows (u/call s "local_notes_search" {"text" "Verified local tools"})))))))
+    (testing "the user says what a folder holds: a class the tool doesn't declare is refused"
+      (with-session [s "notes-secret" {:roots {:mod/local-notes {:notes {:path notes :holds :data/secret}}}}]
+        (let [{:keys [text error?]} (u/call s "local_notes_search" {"text" "lisbon"})]
+          (is error?)
+          (is (str/includes? text "you bound :notes as holding :data/secret") text)))
+      (with-session [s "notes-classified" {:roots {:mod/local-notes {:notes {:path notes :holds :data/note}}}}]
+        (is (= 2 (count (rows (u/call s "local_notes_search" {"text" "lisbon"})))))))
     (testing "an unbound root is refused, saying how to bind it"
       (with-session [s "notes-unbound" {}]
         (let [{:keys [text error?]} (u/call s "local_notes_search" {"text" "x"})]

@@ -117,7 +117,10 @@
                             :sandbox (sandbox {:dir dir :roots (keys (:files decl))})
                             :proxy (proxy-allow decl)}]))]
     {:artifact/mode mode
-     :vocabulary {:version (:vocabulary/version vocab)
+     :vocabulary {:providers (into (sorted-map)
+                                   (for [[_ e] es :when (= :verified/provider (get-in e [:entry :atlas/type]))]
+                                     [(get-in e [:entry :provider/host]) (set (get-in e [:entry :provider/holds]))]))
+                  :version (:vocabulary/version vocab)
                   :terms (:vocabulary/terms vocab)
                   :rank (:vocabulary/rank vocab)}
      :modules (into (sorted-map)

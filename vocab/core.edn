@@ -24,6 +24,12 @@
   :ontology/for :verified/refinement
   :ontology/keys [:refinement/narrow :refinement/broad]}
 
+ :verified/provider
+ {:atlas/type :atlas/ontology
+  :atlas/aspects #{:meta/ontology-provider}
+  :ontology/for :verified/provider
+  :ontology/keys [:provider/host :provider/holds]}
+
  ;; ---- the terms
  :verified/core-vocabulary
  {:atlas/type :verified/vocabulary
@@ -48,6 +54,16 @@
   ;; when a module's new version moves up
   :vocabulary/rank {:effect/read 0 :effect/write 1 :effect/send 2
                     :egress/none 0 :egress/provider 1 :egress/internet 2}}
+
+ ;; ---- the providers: hosts that already hold the user's data, and which
+ ;; data. A module's egress is classified by these, never by its own word:
+ ;; a host listed here is :egress/provider for what it holds, any other host
+ ;; is :egress/internet. A tool that can reach a provider reads what it holds.
+ :provider/gmail
+ {:atlas/type :verified/provider
+  :atlas/aspects #{:meta/provider-gmail}
+  :provider/host "gmail.googleapis.com"
+  :provider/holds #{:data/email}}
 
  ;; ---- the refinements: a narrow term always carries its broad one, so a
  ;; policy on the broad term covers it (checked, never inferred)
