@@ -5,7 +5,9 @@
    its arguments are the declared ones, of the declared types; the
    session's caps; the session's taint (once a session has read a data
    class, the tools whose egress the session policy blocks for it are
-   refused); and, for a tool that must ask, the user's answer. It then runs
+   refused); where it came from (a tool that sends without asking may send
+   only to where the session's data came from); and, for a tool that must
+   ask, the user's answer. It then runs
    the tool in its sandbox, keeps only the declared keys of its result, up
    to its per-call cap, masks the redaction patterns, and records the call.
 
@@ -47,7 +49,27 @@
 (defn artifact-sha [] (str/trim (slurp (str (:artifact @config) ".sha256"))))
 (defn live [] (read-edn (:live @config)))
 
-(def session (atom {:taint #{} :calls {} :client-caps {}}))
+;; :taint the data classes the session has read; :origins where each came
+;; from, class -> #{origin}, an origin a host the tool reached or a folder
+;; it read ("<module> <root>")
+(def session (atom {:taint #{} :origins {} :calls {} :client-caps {}}))
+
+(defn- hosts-of [t] (set (map :host (:proxy t))))
+
+(defn- sources-of
+  "Where a tool's reads come from: the hosts it reaches, the folders it
+   reads. None: what it reads came in through its arguments."
+  [t]
+  (into (hosts-of t) (for [r (keys (:roots t))] (str (name (:module t)) " " (name r)))))
+
+(defn- foreign-data
+  "For a tool that sends without asking: the data the session holds from
+   anywhere but where this tool sends, [class origin]. Data may go back,
+   silently, only to where it came from."
+  [t]
+  (let [hosts (hosts-of t)]
+    (when (and (seq hosts) (not (:confirm t)))
+      (sort (for [[c os] (:origins @session) o os :when (not (hosts o))] [c o])))))
 (def mcp-in (java.io.BufferedReader. (java.io.InputStreamReader. System/in)))
 
 (defn- now [] (str (java.time.Instant/now)))
@@ -300,6 +322,11 @@
       blocked-by (refuse tid (str "the session has read " (str/join ", " blocked-by)
                                   " and this tool's egress " (str/join ", " (sort egress)) " is blocked after it")
                          :session/blocks)
+      (seq (foreign-data t))
+      (refuse tid (str "this tool sends to " (str/join ", " (sort (hosts-of t))) " without asking, and the session holds "
+                       (str/join "; " (for [[c o] (foreign-data t)] (str c " from " o)))
+                       ": data goes back without asking only to where it came from")
+              :session/origin)
       :else
       (let [asked (when confirm (ask-user tid t args))]
         (when asked (audit! (merge {:tool tid :args args :asked-user true} asked)))
@@ -314,8 +341,13 @@
                     rows (->> rows
                               (take cap)
                               (mapv #(update-vals (select-keys % returns) (partial redact patterns))))]
-                (swap! session #(-> % (update :taint into reads) (update-in [:calls tid] (fnil inc 0))))
-                (audit! {:tool tid :args args :rows (count rows) :more more :keys returns :taint (:taint @session)})
+                (swap! session #(-> %
+                                    (update :taint into reads)
+                                    (update :origins (fn [o] (reduce (fn [o c] (update o c (fnil into #{}) (sources-of t)))
+                                                                     o (when (seq (sources-of t)) reads))))
+                                    (update-in [:calls tid] (fnil inc 0))))
+                (audit! {:tool tid :args args :rows (count rows) :more more :keys returns :taint (:taint @session)
+                         :origins (:origins @session)})
                 ;; a result says what it leaves out: the agent must not take
                 ;; the first rows for all of them
                 (cond-> (text (json/generate-string rows))

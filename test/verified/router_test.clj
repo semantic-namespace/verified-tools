@@ -167,6 +167,25 @@
       (let [msg (u/request s "tools/call" {:name "local_notes_search" :arguments {"text" "Note 7"}})]
         (is (= 1 (count (get-in msg [:result :content]))) "no note when nothing is left out")))))
 
+(deftest data-goes-back-silently-only-where-it-came-from
+  (let [notes (str u/root "/test/fixtures/notes")
+        live {:roots {:mod/local-notes {:notes notes}}}]
+    (testing "a provider's data may go back to it"
+      (with-session [s "origin-same" live]
+        (u/call s "receipts_search" october)
+        (is (not (:error? (u/call s "receipts_search" october))))))
+    (testing "data from elsewhere may not go to a provider without asking"
+      (with-session [s "origin-other" live]
+        (u/call s "local_notes_search" {"text" "lisbon"})
+        (let [{:keys [text error?]} (u/call s "receipts_search" october)]
+          (is error?)
+          (is (str/includes? text ":data/note from local-notes notes") text)
+          (is (str/includes? text ":session/origin")))))
+    (testing "a tool that asks is the user's call, with the payload shown"
+      (with-session [s "origin-asks" live :elicitation true]
+        (u/call s "local_notes_search" {"text" "lisbon"})
+        (is (= "elicitation/create" (:method (u/call s "share_snippet" {"text" "Lisbon on the 14th"}))))))))
+
 (deftest masking
   (let [patterns (get-in (u/build! :replay @dir) [:session :redact])
         redact @#'router/redact]

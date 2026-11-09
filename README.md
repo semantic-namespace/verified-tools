@@ -47,8 +47,15 @@ can reach. It is never simply believed:
 The review that `bb add` shows marks each host as "a registered provider of
 …" or "not a registered provider: the internet".
 
-Not done yet: tying "provider" to where a session's data came from, so that
-egress to host X is allowed only for data read from X (the audit's gap 2).
+**Where data came from.** The session records the origin of everything it
+reads: the hosts a tool reached, or the folders it read. A tool that sends
+without asking may send only back to where the session's data came from.
+For example, after your notes have been read, the Gmail search is refused,
+because its query could carry them to Google. A tool that asks you before
+every call is your decision, with the payload in front of you, and the
+blocks still apply. The origin is tracked per session and per class, not
+per value.
+
 The registry is per host. `www.googleapis.com` serves many APIs, so it would
 need host and path prefix.
 
