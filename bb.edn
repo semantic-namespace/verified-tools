@@ -2,6 +2,9 @@
 ;; bb build   the artifact: what the router may serve, and why the rest is out
 ;; bb serve   the router, an MCP server over stdio, serving the artifact
 ;; bb confirm  the user answering what the router asks, in their own terminal
+;; bb add      installs a module pinned by SHA, after showing what it may do
+;; bb remove   removes one, after showing what goes with it
+;; bb diff     what changes between two artifacts
 ;; bb test     the checks, the build, the router, the sandbox and the egress, end to end
 {:paths ["router/src" "sdk/src" "dev"]
  :deps {io.github.semantic-namespace/meta-source {:git/url "https://github.com/semantic-namespace/meta-source"
@@ -18,6 +21,15 @@
          confirm {:doc "What the router is waiting to ask, and the answer: bb confirm [<id> yes|no]"
                   :requires ([verified.confirm :as confirm])
                   :task (apply confirm/-main *command-line-args*)}
+         add {:doc "Installs a module after showing what it may do: bb add <git-url> <sha> [--path p] [--yes|--dry-run]"
+              :requires ([verified.install :as install])
+              :task (apply install/add-main *command-line-args*)}
+         remove {:doc "Removes an installed module after showing what goes: bb remove <module-dir> [--yes]"
+                 :requires ([verified.install :as install])
+                 :task (apply install/remove-main *command-line-args*)}
+         diff {:doc "What changes between two artifacts: bb diff old.edn new.edn"
+               :requires ([verified.diff :as diff])
+               :task (apply diff/-main *command-line-args*)}
          test {:doc "Runs test/: bb test [namespace-suffix ...]"
                :extra-paths ["test"]
                :requires ([verified.test-runner :as tr])

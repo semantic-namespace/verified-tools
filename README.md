@@ -13,11 +13,62 @@ bb build [live]    # artifact/artifact.edn: the tools that may run, and why the 
 bb serve           # the router: an MCP server over stdio (--artifact --live --audit --confirm)
 bb confirm         # the user, in their own terminal: what the router is asking, and the answer
 bb fake-provider   # a stand-in for Gmail and the paste service, for the live path
+bb add <git-url> <sha> [--dry-run|--yes]   # install a module: see what it may do first
+bb remove <module-dir>                     # uninstall one: see what goes first
+bb diff old.edn new.edn                    # what changes between two artifacts
 bb test            # all of the below, end to end, in seconds
 ```
 
-The artifact is built on the user's machine and isn't in git. Its sandbox
-commands name absolute paths.
+The artifact is built on the user's machine and isn't in git. It names no
+machine path: the sandbox commands hold `{root}`, `{bb}` and
+`{artifact-dir}`, which the router fills in when it runs a tool. So two
+artifacts differ only in what they allow.
+
+## Installing a module
+
+```
+$ bb add ../share-snippet 6e6b0a13da26… --dry-run
+
+:mod/share-snippet 0.2.0 from …/share-snippet @ 6e6b0a13da26
+
+share-snippet: Posts a short text to a paste service and returns its link
+  from     :mod/share-snippet 0.2.0, …/share-snippet @ 6e6b0a13da26
+  takes    text (string)
+  reads    note (the user's own notes)
+  does     send (sends something on the user's behalf)
+  network  internet (anywhere else)
+             POST mirror.example/s
+             POST paste.example/api/snippets
+  returns  url
+  at most  1 rows a call, 50 a session
+  asks you before every call
+
+Against what is installed (2 tools):
+  ▲ share-snippet: new route POST mirror.example/s
+  ▲ share-snippet: per-session cap 5 -> 50
+```
+
+How `bb add` works:
+
+- **Pinned.** A module is fetched at a full commit SHA, never a branch.
+- **Staged.** It's checked together with the vocabulary and every installed
+  module in a copy of the project. The copy is built by a `bb` process of
+  its own, running inside it, so nothing of the real project changes yet.
+- **What you read.** The review is written from the staged artifact, in
+  the vocabulary's own words: what the module may do, not what its README
+  says it does.
+- **Escalations.** Each change against what's installed is marked ▲ when
+  it lets a tool reach further. Rankings come from `:vocabulary/rank`:
+  more data read, a stronger effect, a wider egress, a new host, route or
+  credential scope, more keys returned, higher caps, an extra argument, or
+  no longer asking the user.
+- **Refused.** A module meta-source finds errors in can't be installed, and
+  the review says why. The same goes for a tool the reader didn't find as a
+  tool (for example, `:tools` written as `#:tool{…}`), because no policy has
+  checked it.
+- **Installed on yes.** The module is copied into `modules/`, its URL and
+  SHA are recorded in `modules.lock.edn`, and the artifact is rebuilt. The
+  artifact's `:modules` then says where each tool came from.
 
 ## Real Gmail
 

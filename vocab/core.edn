@@ -43,7 +43,11 @@
    :effect/send "sends something on the user's behalf"
    :egress/none "no network"
    :egress/provider "only to the provider that already holds the data"
-   :egress/internet "anywhere else"}}
+   :egress/internet "anywhere else"}
+  ;; how far each effect and egress reaches: what a reviewer is warned about
+  ;; when a module's new version moves up
+  :vocabulary/rank {:effect/read 0 :effect/write 1 :effect/send 2
+                    :egress/none 0 :egress/provider 1 :egress/internet 2}}
 
  ;; ---- the refinements: a narrow term always carries its broad one, so a
  ;; policy on the broad term covers it (checked, never inferred)

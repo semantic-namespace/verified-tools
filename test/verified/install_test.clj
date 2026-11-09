@@ -1,0 +1,148 @@
+(ns verified.install-test
+  "Installing, on a copy of the project, from throwaway git repositories:
+   a new module, an upgrade that reaches further, an upgrade the policies
+   refuse, a branch name instead of a SHA, and removing."
+  (:require [babashka.fs :as fs]
+            [babashka.process :as proc]
+            [clojure.edn :as edn]
+            [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [verified.install :as install]
+            [verified.test-util :as u]))
+
+(defn- git [dir & args]
+  (str/trim (:out @(proc/process (into ["git" "-C" (str dir) "-c" "user.name=t" "-c" "user.email=t@t"] args)
+                                 {:out :string :err :string}))))
+
+(defn- repo!
+  "A git repository holding files (path -> text); its HEAD SHA."
+  [name files]
+  (let [d (fs/path (u/scratch (str "repos/" name)))]
+    (doseq [[p text] files]
+      (fs/create-dirs (fs/parent (fs/path d p)))
+      (spit (str (fs/path d p)) text))
+    (git d "init" "-q")
+    (git d "add" ".")
+    (git d "commit" "-q" "-m" "v")
+    {:url (str d) :sha (git d "rev-parse" "HEAD")}))
+
+(defn- project!
+  "A copy of the project's sources, to install into."
+  []
+  (let [d (u/scratch "install-project")]
+    (doseq [p ["vocab" "packs" "modules"]] (fs/copy-tree (fs/path u/root p) (fs/path d p)))
+    (fs/copy (fs/path u/root "meta-source.edn") d)
+    d))
+
+(def word-count
+  {"module.edn" "{:module/id :mod/word-count
+ :module/version \"0.1.0\"
+ :tools
+ {:tool/word-count
+  {:doc \"Counts the words of a text\"
+   :args {:text :string}
+   :reads #{:data/note}
+   :effect :effect/read
+   :egress #{:egress/none}
+   :returns [:count/words]
+   :caps {:per-call 1 :per-session 100}}}}
+"
+   "src/mod/word_count.clj" "(ns mod.word-count (:require [verified.sdk.out :as out]))
+(defn ^{:module/tool :tool/word-count} word-count [{:keys [text]}]
+  (out/rows :tool/word-count [{:count/words (count (re-seq #\"\\S+\" text))}]))"})
+
+(defn- run [f] (let [res (atom nil)] [(with-out-str (reset! res (f))) @res]))
+(defn- lock [d] (edn/read-string (slurp (str (fs/path d "modules.lock.edn")))))
+(defn- artifact [d] (edn/read-string (slurp (str (fs/path d "artifact" "artifact.edn")))))
+
+(deftest a-new-module
+  (let [d (project!) {:keys [url sha]} (repo! "word-count" word-count)]
+    (testing "a dry run shows, and changes nothing"
+      (let [[out res] (run #(install/add! {:root d :url url :sha sha :dry-run true}))]
+        (is (not (:installed res)))
+        (is (str/includes? out "network  none (no network)") out)
+        (is (str/includes? out "▲ word-count: a new tool"))
+        (is (not (fs/exists? (fs/path d "modules" "word-count"))))))
+    (testing "yes installs it, pinned"
+      (let [[_ res] (run #(install/add! {:root d :url url :sha sha :yes true}))]
+        (is (:installed res))
+        (is (fs/exists? (fs/path d "modules" "word-count" "module.edn")))
+        (is (= {:git/url url :git/sha sha} (get-in (lock d) ["word-count" :source])))
+        (is (= {:git/url url :git/sha sha} (get-in (artifact d) [:modules :mod/word-count :source])))
+        (is (contains? (:tools (artifact d)) :tool/word-count))))
+    (testing "removing shows what goes, and takes it out"
+      (let [[out res] (run #(install/remove! {:root d :dir "word-count" :yes true}))]
+        (is (:removed res))
+        (is (str/includes? out "word-count: removed"))
+        (is (not (contains? (:tools (artifact d)) :tool/word-count)))
+        (is (not (contains? (lock d) "word-count")))))))
+
+(defn- module-files
+  "The files of an installed example module, its declaration changed by f
+   and written one key per line, as the examples are."
+  [dir f]
+  (let [base (fs/path u/root "modules" dir)
+        decl (f (edn/read-string (slurp (str (fs/path base "module.edn")))))]
+    (into {"module.edn" (binding [*print-namespace-maps* false]
+                          (str "{" (str/join "\n " (for [[k v] decl] (str (pr-str k) " " (pr-str v)))) "}\n"))}
+          (for [p (fs/glob base "**") :when (and (fs/regular-file? p) (not= "module.edn" (str (fs/file-name p))))]
+            [(str (fs/relativize base p)) (slurp (str p))]))))
+
+(deftest an-upgrade-that-reaches-further
+  (let [d (project!)
+        {:keys [url sha]} (repo! "share-v2"
+                                 (module-files "share-snippet"
+                                               #(-> %
+                                                    (assoc :module/version "0.2.0")
+                                                    (assoc-in [:egress :mirror] {:host "mirror.example" :routes {:create [:post "/s"]}})
+                                                    (update-in [:tools :tool/share-snippet :caps :per-session] * 10)
+                                                    (assoc-in [:tools :tool/share-snippet :confirm] true))))
+        before (fs/list-dir (fs/path d "modules" "share-snippet"))
+        [out res] (run #(install/add! {:root d :url url :sha sha :dry-run true}))]
+    (is (not (:installed res)))
+    (is (str/includes? out "▲ share-snippet: new route POST mirror.example/s") out)
+    (is (str/includes? out "▲ share-snippet: per-session cap 5 -> 50"))
+    (is (= (set before) (set (fs/list-dir (fs/path d "modules" "share-snippet")))) "nothing changed")))
+
+(deftest an-upgrade-the-policies-refuse
+  (let [d (project!)
+        {:keys [url sha]} (repo! "receipts-v2"
+                                 (module-files "gmail-receipts"
+                                               #(-> %
+                                                    (assoc :module/version "0.2.0")
+                                                    (update-in [:tools :tool/receipts-search :egress] conj :egress/internet))))
+        [out res] (run #(install/add! {:root d :url url :sha sha :yes true}))]
+    (is (not (:installed res)))
+    (is (some #(str/includes? % "sends nothing but to the provider") (:excluded res)) out)
+    (is (str/includes? out "It can't be installed"))
+    (is (not (fs/exists? (fs/path d "modules.lock.edn"))) "nothing written")))
+
+(deftest an-unreadable-declaration-is-said
+  (let [d (project!)
+        {:keys [url sha]} (repo! "no-id" (assoc word-count "module.edn"
+                                              (str/replace (get word-count "module.edn")
+                                                           "{:module/id :mod/word-count\n" "{:module/name :mod/word-count\n")))]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no :module/id"
+                          (install/add! {:root d :url url :sha sha :yes true})))))
+
+(deftest a-tool-the-reader-missed-stays-out
+  (testing "tools written as #:tool{...} aren't read as tools, so no policy saw them: the module is out, saying why"
+    (let [d (project!)
+          decl (edn/read-string (get word-count "module.edn"))
+          {:keys [url sha]} (repo! "word-count-ns-map"
+                                   (assoc word-count "module.edn"
+                                          (str "{:module/id :mod/word-count\n :module/version \"0.1.0\"\n :tools "
+                                               (binding [*print-namespace-maps* true] (pr-str (:tools decl))) "}\n")))
+          [out res] (run #(install/add! {:root d :url url :sha sha :yes true}))]
+      (is (not (:installed res)))
+      (is (some #(str/includes? % "no policy has checked it") (:excluded res)) out))))
+
+(deftest pinned-by-sha-only
+  (let [d (project!) {:keys [url]} (repo! "word-count-branch" word-count)]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"full commit SHA"
+                          (install/add! {:root d :url url :sha "main" :yes true})))))
+
+(deftest diff-words
+  (let [a (u/build! :replay (u/scratch "diff-a"))]
+    (is (= "  no change in what any tool can do" ((requiring-resolve 'verified.diff/render)
+                                                  ((requiring-resolve 'verified.diff/changes) a a))))))
