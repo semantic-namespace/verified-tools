@@ -147,8 +147,20 @@
 
 ;; ---- running a tool in its sandbox
 
+(defn- bb-path []
+  (some #(let [f (io/file % "bb")] (when (.canExecute f) (.getCanonicalPath f)))
+        (str/split (System/getenv "PATH") #":")))
+
+(defn- sandbox
+  "The tool's sandbox command, its placeholders filled for this machine."
+  [t]
+  (let [fill {"{root}" (.getCanonicalPath (io/file "."))
+              "{bb}" (bb-path)
+              "{artifact-dir}" (.getCanonicalPath (.getParentFile (.getAbsoluteFile (io/file (:artifact @config)))))}]
+    (mapv #(str/replace % #"\{root\}|\{bb\}|\{artifact-dir\}" fill) (:sandbox t))))
+
 (defn- run-tool [tid t args]
-  (let [cmd (concat (:sandbox t) ["bb" "-cp" (str "sdk/src:router/src:modules/" (:dir t) "/src")
+  (let [cmd (concat (sandbox t) ["bb" "-cp" (str "sdk/src:router/src:modules/" (:dir t) "/src")
                                   "-m" "verified.runner" (str tid) (pr-str (update-keys args keyword))
                                   (.getCanonicalPath (io/file (:artifact @config)))])
         p (proc/process (vec cmd) {:err :string})

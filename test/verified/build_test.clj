@@ -19,10 +19,20 @@
       (is (some #{"--unshare-net"} sandbox) "never a network")
       (is (= "/tmp" (second (drop-while #(not= "HOME" %) sandbox))) "HOME is the private /tmp")
       (let [bound (set (map second (filter #(= "--ro-bind" (first %)) (partition 2 1 sandbox))))]
-        (is (not-any? #(str/starts-with? % (System/getProperty "user.home"))
-                      (remove #(or (str/starts-with? % u/root) (str/ends-with? % "/bb")) bound))
-            "nothing from the home directory but the project's own read-only parts and the bb binary")
+        (is (every? #(or (str/starts-with? % "{") (#{"/usr" "/bin" "/lib" "/lib64" "/etc/alternatives" "/etc/ld.so.cache"} %)) bound)
+            "the system read-only, and else only the project's placeholders")
         (is (= 1 (count (filter #(str/includes? % "/modules/") bound))) "only its own module")))))
+
+(deftest portable
+  (let [text (pr-str @artifact)]
+    (is (not (str/includes? text u/root)) "no path of the machine it was built on")
+    (is (not (str/includes? text (System/getProperty "user.home"))))))
+
+(deftest provenance-and-vocabulary
+  (is (= :local (get-in @artifact [:modules :mod/gmail-receipts :source])))
+  (is (= "0.1.0" (get-in @artifact [:modules :mod/gmail-receipts :version])))
+  (is (string? (get-in @artifact [:vocabulary :terms :data/financial])))
+  (is (= 2 (get-in @artifact [:vocabulary :rank :egress/internet]))))
 
 (deftest egress-allowlists
   (is (= #{["gmail.googleapis.com" :get "/gmail/v1/users/me/messages"]
