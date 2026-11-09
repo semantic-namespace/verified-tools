@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # bubblewrap needs unprivileged user namespaces, which Ubuntu 24.04
+      # restricts through AppArmor by default
+      - name: bubblewrap
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          bb: 1.12.212
+          cli: 1.12.1.1550
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: deps-${{ hashFiles('bb.edn', 'meta-source.edn', 'packs/deps.edn') }}
+
+      - name: check
+        run: bb check < /dev/null
+
+      - name: test
+        run: bb test < /dev/null

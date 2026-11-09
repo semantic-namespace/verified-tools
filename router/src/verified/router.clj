@@ -19,7 +19,8 @@
    :confirm {:via :terminal}) by a file the user answers with `bb confirm`
    in their own terminal.
 
-     bb serve        (one session per process)
+     bb serve [--artifact f] [--live f] [--audit dir] [--confirm dir]
+                     (one session per process)
      live.edn        (the user's, not in git) where hosts resolve and where
                      credentials are: {:hosts {\"gmail.googleapis.com\" \"http://127.0.0.1:8765\"}
                                        :credentials {:google {:token-file \"secrets/google.token\"}}
@@ -31,10 +32,14 @@
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
-(def artifact (delay (edn/read-string (slurp "artifact/artifact.edn"))))
-(def artifact-sha (delay (str/trim (slurp "artifact/artifact.edn.sha256"))))
-(def live (delay (let [f (io/file "live.edn")] (if (.exists f) (edn/read-string (slurp f)) {}))))
-(def audit-file "audit/audit.log")
+;; where things are; bb serve [--artifact f] [--live f] [--audit dir] [--confirm dir]
+(def config (atom {:artifact "artifact/artifact.edn" :live "live.edn" :audit "audit" :confirm "confirm"}))
+
+(def ^:private read-edn
+  (memoize (fn [path] (let [f (io/file path)] (if (.exists f) (edn/read-string (slurp f)) {})))))
+(defn artifact [] (read-edn (:artifact @config)))
+(defn artifact-sha [] (str/trim (slurp (str (:artifact @config) ".sha256"))))
+(defn live [] (read-edn (:live @config)))
 
 (def session (atom {:taint #{} :calls {} :client-caps {}}))
 (def mcp-in (java.io.BufferedReader. (java.io.InputStreamReader. System/in)))
@@ -42,8 +47,9 @@
 (defn- now [] (str (java.time.Instant/now)))
 
 (defn- audit! [m]
-  (.mkdirs (io/file "audit"))
-  (spit audit-file (str (pr-str (merge {:at (now) :artifact (subs @artifact-sha 0 12)} m)) "\n") :append true))
+  (.mkdirs (io/file (:audit @config)))
+  (spit (io/file (:audit @config) "audit.log")
+        (str (pr-str (merge {:at (now) :artifact (subs (artifact-sha) 0 12)} m)) "\n") :append true))
 
 (defn- send! [msg]
   (locking mcp-in
@@ -51,7 +57,7 @@
     (flush)))
 
 (defn- tool-name [tid] (str/replace (name tid) "-" "_"))
-(defn- tool-of [name] (some (fn [[tid _]] (when (= name (tool-name tid)) tid)) (:tools @artifact)))
+(defn- tool-of [name] (some (fn [[tid _]] (when (= name (tool-name tid)) tid)) (:tools (artifact))))
 
 (defn- schema [{:keys [args]}]
   {:type "object"
@@ -103,7 +109,7 @@
           proxy)))
 
 (defn- token [auth]
-  (when-let [f (get-in @live [:credentials auth :token-file])]
+  (when-let [f (get-in (live) [:credentials auth :token-file])]
     (str/trim (slurp f))))
 
 (defn- egress!
@@ -111,7 +117,7 @@
    {:verified/response body} or {:verified/refused why}."
   [tid t {:keys [host method path query body] :as req}]
   (if-let [route (allowed-route t req)]
-    (let [base (get-in @live [:hosts host] (str "https://" host))
+    (let [base (get-in (live) [:hosts host] (str "https://" host))
           tok (when (:auth route) (token (:auth route)))]
       (if (and (:auth route) (nil? tok))
         (do (audit! {:tool tid :egress [method host path] :refused "no credential for it in live.edn"})
@@ -133,7 +139,8 @@
 
 (defn- run-tool [tid t args]
   (let [cmd (concat (:sandbox t) ["bb" "-cp" (str "sdk/src:router/src:modules/" (:dir t) "/src")
-                                  "-m" "verified.runner" (str tid) (pr-str (update-keys args keyword))])
+                                  "-m" "verified.runner" (str tid) (pr-str (update-keys args keyword))
+                                  (.getCanonicalPath (io/file (:artifact @config)))])
         p (proc/process (vec cmd) {:err :string})
         to-tool (io/writer (:in p))
         result (with-open [r (io/reader (:out p))]
@@ -150,7 +157,9 @@
         {:keys [exit err]} @p]
     (if (and (zero? exit) (sequential? result))
       {:rows result}
-      {:failed (or (first (str/split-lines (str err))) "no result")})))
+      {:failed (or (some->> (str err) (re-find #"(?m)^Message:\s+(.*)$") second)
+                   (first (str/split-lines (str err)))
+                   "no result")})))
 
 ;; ---- asking the user, around the agent
 
@@ -183,9 +192,9 @@
 
 (defn- ask-by-file [tid q args]
   (let [id (str (name tid) "-" (System/currentTimeMillis))
-        pending (io/file "confirm/pending" (str id ".edn"))
-        answer (io/file "confirm/answers" (str id ".edn"))
-        timeout-ms (* 1000 (get-in @live [:confirm :timeout-s] 120))]
+        pending (io/file (:confirm @config) "pending" (str id ".edn"))
+        answer (io/file (:confirm @config) "answers" (str id ".edn"))
+        timeout-ms (* 1000 (get-in (live) [:confirm :timeout-s] 120))]
     (io/make-parents pending)
     (io/make-parents answer)
     (spit pending (pr-str {:id id :tool tid :args args :question q :asked (now)}))
@@ -203,15 +212,15 @@
 (defn- ask-user [tid t args]
   (let [q (question tid t args)]
     (if (and (get-in @session [:client-caps "elicitation"])
-             (not= :terminal (get-in @live [:confirm :via])))
+             (not= :terminal (get-in (live) [:confirm :via])))
       (ask-by-elicitation q)
       (ask-by-file tid q args))))
 
 ;; ---- a call
 
 (defn call [tid args]
-  (let [{:keys [returns caps reads egress confirm] :as t} (get-in @artifact [:tools tid])
-        {:keys [blocks] patterns :redact} (:session @artifact)
+  (let [{:keys [returns caps reads egress confirm] :as t} (get-in (artifact) [:tools tid])
+        {:keys [blocks] patterns :redact} (:session (artifact))
         {:keys [taint calls]} @session
         blocked-by (some (fn [e] (seq (filter taint (get blocks e)))) egress)]
     (cond
@@ -245,14 +254,15 @@
                    {:protocolVersion (get params "protocolVersion" "2024-11-05")
                     :capabilities {:tools {}}
                     :serverInfo {:name "verified-router" :version "0.2.0"}})
-    "tools/list" {:tools (vec (for [[tid t] (:tools @artifact)]
+    "tools/list" {:tools (vec (for [[tid t] (:tools (artifact))]
                                 {:name (tool-name tid) :description (description t) :inputSchema (schema t)}))}
     "tools/call" (let [tid (tool-of (get params "name"))]
                    (call (or tid (keyword "unknown" (str (get params "name")))) (get params "arguments" {})))
     nil))
 
-(defn -main [& _]
-  (audit! {:session :start :mode (:artifact/mode @artifact) :tools (vec (keys (:tools @artifact)))})
+(defn -main [& args]
+  (swap! config merge (into {} (for [[k v] (partition 2 args)] [(keyword (subs k 2)) v])))
+  (audit! {:session :start :mode (:artifact/mode (artifact)) :tools (vec (keys (:tools (artifact))))})
   (loop []
     (when-let [line (.readLine mcp-in)]
       (when-not (str/blank? line)

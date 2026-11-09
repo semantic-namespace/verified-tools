@@ -34,8 +34,8 @@
             (nil? line) (throw (ex-info "the router closed the channel" {}))
             :else response))))
 
-(defn -main [tool-id args-edn]
-  (let [artifact (edn/read-string (slurp "artifact/artifact.edn"))
+(defn -main [tool-id args-edn artifact-file]
+  (let [artifact (edn/read-string (slurp artifact-file))
         tid (keyword (subs tool-id 1))
         {:keys [dir var]} (get-in artifact [:tools tid])
         decl (edn/read-string (slurp (str "modules/" dir "/module.edn")))
