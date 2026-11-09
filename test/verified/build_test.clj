@@ -19,8 +19,9 @@
       (is (some #{"--unshare-net"} sandbox) "never a network")
       (is (= "/tmp" (second (drop-while #(not= "HOME" %) sandbox))) "HOME is the private /tmp")
       (let [bound (set (map second (filter #(= "--ro-bind" (first %)) (partition 2 1 sandbox))))]
-        (is (not-any? #(str/starts-with? % (System/getProperty "user.home")) (remove #(str/starts-with? % u/root) bound))
-            "nothing from the home directory but the project's own read-only parts")
+        (is (not-any? #(str/starts-with? % (System/getProperty "user.home"))
+                      (remove #(or (str/starts-with? % u/root) (str/ends-with? % "/bb")) bound))
+            "nothing from the home directory but the project's own read-only parts and the bb binary")
         (is (= 1 (count (filter #(str/includes? % "/modules/") bound))) "only its own module")))))
 
 (deftest egress-allowlists
