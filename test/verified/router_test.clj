@@ -77,8 +77,10 @@
     (testing "the question is the router's: the tool, where it sends, the exact text"
       (let [req (u/call s "share_snippet" {"text" "Lunch on Thursday"})]
         (is (= "elicitation/create" (:method req)))
-        (is (str/includes? (get-in req [:params :message]) "paste.example (internet)"))
-        (is (str/includes? (get-in req [:params :message]) "text: Lunch on Thursday"))
+        (let [[l1 l2 l3] (str/split-lines (get-in req [:params :message]))]
+          (is (= "Send this to paste.example (internet)?" l1) "where it goes, first")
+          (is (= "text: \"Lunch on Thursday\"" l2) "exactly what goes, second")
+          (is (str/starts-with? l3 "— share_snippet: ")))
         (is (= {:url "https://paste.example/s/abc123"}
                (update-keys (first (rows (u/answer-elicitation s req {:action "accept" :content {:allow true}}))) (comp keyword name))))))
     (doseq [[label result] [["unticked" {:action "accept" :content {:allow false}}]
@@ -99,6 +101,13 @@
       (if-let [f (first (fs/glob dir "pending/*.edn"))]
         (with-out-str (confirm/answer! dir (str/replace (str (fs/file-name f)) #"\.edn$" "") answer))
         (when (< n 200) (Thread/sleep 50) (recur (inc n)))))))
+
+(deftest a-multi-line-payload-stays-on-one-line
+  (with-session [s "one-line" {} :elicitation true]
+    (let [req (u/call s "share_snippet" {"text" "Trip to Lisbon\n\nFlights on the 14th\nHotel in Alfama"})
+          [_ l2] (str/split-lines (get-in req [:params :message]))]
+      (is (= "text: \"Trip to Lisbon ⏎  ⏎ Flights on the 14th ⏎ Hotel in Alfama\"" l2) l2)
+      (u/answer-elicitation s req {:action "decline"}))))
 
 (deftest asking-in-the-terminal
   (with-session [s "terminal" {:confirm {:via :terminal :timeout-s 20}} :elicitation true]
