@@ -1,0 +1,5 @@
+;; live.edn for the fake provider: cp dev/live.fake.edn live.edn
+{:hosts {"gmail.googleapis.com" "http://127.0.0.1:8765"
+         "paste.example" "http://127.0.0.1:8765"}
+ :credentials {:google {:token-file "dev/fake.token"}}
+ :confirm {:timeout-s 120}}  ; add :via :terminal to always ask in your own terminal

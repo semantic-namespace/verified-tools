@@ -1,3 +1,6 @@
 .cpcache/
 .meta-source/
 audit/
+live.edn
+secrets/
+confirm/

@@ -2,7 +2,8 @@
   "HTTP only through routes the module declares: (call :gmail/get-message
    {:id id}). The route is a literal keyword, :egress-key/route-name; its
    method and path template come from the declaration, path holes from the
-   params, the rest of the params go as the query. The token is the
+   params, the rest of the params go as the query (a GET) or as the JSON
+   body (any other method). The token is the
    transport's: a module never sees it."
   (:require [clojure.string :as str]
             [verified.sdk :as sdk]))
@@ -26,6 +27,8 @@
         [method template] (get-in egress [:routes (keyword (name route))])]
     (when-not template
       (sdk/refuse (str "route " route " is not declared") {:route route}))
-    (let [[path query] (fill-path template params)]
-      (sdk/*transport* {:route route :host (:host egress) :method method :path path
-                        :query query :auth (:auth egress)}))))
+    (let [[path rest-params] (fill-path template params)]
+      (sdk/*transport* (cond-> {:route route :host (:host egress) :method method :path path
+                                :auth (:auth egress)}
+                         (= :get method) (assoc :query rest-params)
+                         (not= :get method) (assoc :body rest-params))))))

@@ -59,13 +59,20 @@
          :proxy
          [{:host "gmail.googleapis.com",
            :method :get,
-           :path "/gmail/v1/users/me/messages/{id}/attachments/{att}"}
+           :path "/gmail/v1/users/me/messages/{id}/attachments/{att}",
+           :auth :google,
+           :scopes #{"https://www.googleapis.com/auth/gmail.readonly"}}
           {:host "gmail.googleapis.com",
            :method :get,
-           :path "/gmail/v1/users/me/messages/{id}"}
+           :path "/gmail/v1/users/me/messages/{id}",
+           :auth :google,
+           :scopes #{"https://www.googleapis.com/auth/gmail.readonly"}}
           {:host "gmail.googleapis.com",
            :method :get,
-           :path "/gmail/v1/users/me/messages"}],
+           :path "/gmail/v1/users/me/messages",
+           :auth :google,
+           :scopes
+           #{"https://www.googleapis.com/auth/gmail.readonly"}}],
          :var mod.gmail-receipts/receipts-search,
          :egress #{:egress/provider},
          :effect :effect/read,

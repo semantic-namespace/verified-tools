@@ -32,26 +32,27 @@
 (defn sandbox
   "The bubblewrap arguments a tool runs under: the system read-only, its own
    module's code and the SDK and runner read-only, no home directory, a
-   private /tmp, and no network unless it declares egress to a provider and
-   runs live (in replay it never needs any)."
-  [{:keys [dir egress]} mode]
+   private /tmp, and no network, ever. A tool that declares egress reaches
+   it through the router, over its stdio, and only on its declared routes."
+  [{:keys [dir]}]
   (let [ro #(when (.exists (io/file %)) ["--ro-bind" % %])
         p #(str root "/" %)]
     (vec (concat ["bwrap" "--die-with-parent" "--new-session"]
                  (mapcat ro ["/usr" "/bin" "/lib" "/lib64" "/etc/alternatives" "/etc/ld.so.cache"])
                  (ro (bin "bb"))
                  (mapcat ro [(p "sdk/src") (p "router/src") (p (str "modules/" dir)) (p "artifact")])
-                 ["--proc" "/proc" "--dev" "/dev" "--tmpfs" "/tmp" "--setenv" "HOME" "/tmp" "--chdir" root]
-                 (when (or (= mode :replay) (not (contains? egress :egress/provider)))
-                   ["--unshare-net"])))))
+                 ["--proc" "/proc" "--dev" "/dev" "--tmpfs" "/tmp" "--setenv" "HOME" "/tmp" "--chdir" root
+                  "--unshare-net"]))))
 
 (defn proxy-allow
-  "What the egress proxy lets through for a module, live: exactly its
-   declared routes, method and path template, on their declared hosts."
+  "What the router lets through for a module, live: exactly its declared
+   routes, method and path template, on their declared hosts, with the
+   credential each names (the router holds it; the tool never does)."
   [decl]
-  (vec (for [[_ {:keys [host routes]}] (sort-by key (:egress decl))
+  (vec (for [[_ {:keys [host routes auth]}] (sort-by key (:egress decl))
              [_ [method path]] (sort-by key routes)]
-         {:host host :method method :path path})))
+         (cond-> {:host host :method method :path path}
+           auth (assoc :auth auth :scopes (get-in decl [:auth auth :scopes]))))))
 
 (defn -main [& [mode]]
   (let [mode (keyword (or mode "replay"))
@@ -90,7 +91,7 @@
                             :reads (set (:reads t)) :effect (:effect t) :egress (set (:egress t))
                             :confirm (boolean (:confirm t))
                             :aspects (get-in es [tid :entry :atlas/aspects])
-                            :sandbox (sandbox {:dir dir :egress (set (:egress t))} mode)
+                            :sandbox (sandbox {:dir dir})
                             :proxy (proxy-allow decl)}]))
         artifact {:artifact/mode mode
                   :vocabulary (:vocabulary/version vocab)
