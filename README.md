@@ -99,8 +99,8 @@ three are optional, because not everyone uses each agent.
   - local programs running as you, which reach everything on their own;
   - an agent whose servers of known reach together reach private data,
     untrusted content and a way out (the trifecta);
-  - hosts the bundled registry doesn't know. The registry stands in for
-    Yorba's.
+  - hosts the bundled registry doesn't know. The registry is small and
+    hand-written, a stand-in for a maintained one.
 
 The files hold keys (`:data/secret`). What leaves the tool is
 `:data/agent-config`, through a **declassification** the vocabulary lists:

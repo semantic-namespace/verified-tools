@@ -44,5 +44,5 @@
   :verified {:holds :data/agent-config :optional true :extensions #{"edn"}}}
 
  :bundle
- {;; what remote MCP hosts reach, as Yorba's service registry would say it
+ {;; what remote MCP hosts reach, from a small registry shipped with the module
   :hosts "data/hosts.edn"}}
