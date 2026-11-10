@@ -112,6 +112,8 @@
                             :doc (:doc t) :args (:args t) :returns (:returns t) :caps (:caps t)
                             :reads (set (:reads t)) :effect (:effect t) :egress (set (:egress t))
                             :confirm (boolean (:confirm t))
+                            :yields (some-> (:yields t) set)
+                            :returns-types (:returns-types t)
                             :aspects (get-in es [tid :entry :atlas/aspects])
                             :roots (into (sorted-map) (:files decl))
                             :sandbox (sandbox {:dir dir :roots (keys (:files decl))})

@@ -9,7 +9,7 @@
 (def artifact (delay (u/build! :replay (u/scratch "build"))))
 
 (deftest only-runnable-modules
-  (is (= #{:tool/receipts-search :tool/share-snippet :tool/local-notes-search} (set (keys (:tools @artifact)))))
+  (is (= #{:tool/receipts-search :tool/share-snippet :tool/local-notes-search :tool/agent-connectors :tool/exposure-findings} (set (keys (:tools @artifact)))))
   (is (= {:mod/leaky-receipts 5 :mod/sloppy-notes 7} (update-vals (:excluded @artifact) count)))
   (is (some #(str/includes? % "no code") (get-in @artifact [:excluded :mod/sloppy-notes]))))
 
@@ -53,4 +53,4 @@
 
 (deftest session-policy-from-the-vocabulary
   (is (= #{:data/financial :data/secret :data/email} (get-in @artifact [:session :blocks :egress/internet])))
-  (is (= [:iban :card-number] (map first (get-in @artifact [:session :redact]))) "the most specific first"))
+  (is (= [:iban :card-number :api-key :jwt] (map first (get-in @artifact [:session :redact]))) "the most specific first"))

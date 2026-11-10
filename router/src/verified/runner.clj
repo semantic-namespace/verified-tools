@@ -16,6 +16,7 @@
   (:require [clojure.edn :as edn]
             [clojure.string :as str]
             [verified.sdk :as sdk]
+            [verified.sdk.bundle :as bundle]
             [verified.sdk.files :as files]))
 
 (defn- replay-transport [fixtures]
@@ -53,7 +54,9 @@
                        sdk/*tool* tid
                        sdk/*transport* transport
                        ;; each declared root is mounted at /roots/<name> by the sandbox
-                       files/*roots* (into {} (for [r (keys (:files decl))] [r (str "/roots/" (name r))]))]
+                       files/*roots* (into {} (for [r (keys (:files decl))] [r (str "/roots/" (name r))]))
+                       ;; the module's own directory, mounted read-only, for its bundled data
+                       bundle/*dir* (str "modules/" dir)]
                (f (edn/read-string args-edn)))]
     (prn {:verified/result rows :verified/more @more})
     (flush)))

@@ -1,0 +1,9 @@
+{"numStartups": 12,
+ "mcpServers": {
+   "notion": {"type": "http", "url": "https://mcp.notion.com/mcp", "headers": {"Authorization": "Bearer sk-live-notion-SECRET-0123456789abcdef"}},
+   "web-fetch": {"type": "stdio", "command": "/usr/local/bin/uvx", "args": ["mcp-server-fetch", "--token", "ghp_FAKEFAKEFAKEFAKEFAKEFAKE1234"], "env": {"API_KEY": "sk-ant-api03-SECRETSECRETSECRET"}},
+   "mystery": {"type": "http", "url": "https://tools.unknown-vendor.example/mcp"}},
+ "projects": {
+   "/home/me/work/acme": {"mcpServers": {
+     "slack": {"type": "http", "url": "https://mcp.slack.com/mcp", "headers": {"Authorization": "Bearer xoxb-1234567890-SECRET"}},
+     "verified": {"type": "stdio", "command": "bash", "args": ["-c", "cd ~/verified-tools && exec bb serve"]}}}}}

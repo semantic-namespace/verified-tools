@@ -86,6 +86,74 @@ You bind the root to a folder, per module, in `live.edn`:
 - **`bb add` shows a module's roots and flags changes to them:** a new root,
   or more kinds of file read from one, is ▲.
 
+## What can my AI see? (`ai-exposure`)
+
+This module reads your agents' MCP configuration from Claude Code's
+`~/.claude.json`, Claude Desktop and Cursor, bound as single-file roots. All
+three are optional, because not everyone uses each agent.
+
+- **`agent_connectors`** returns each server's agent, scope, name and kind
+  (local program, remote service, or verified tool set), with its host or
+  program.
+- **`exposure_findings`** flags three things:
+  - local programs running as you, which reach everything on their own;
+  - an agent whose servers of known reach together reach private data,
+    untrusted content and a way out (the trifecta);
+  - hosts the bundled registry doesn't know. The registry is small and
+    hand-written, a stand-in for a maintained one.
+
+The files hold keys (`:data/secret`). What leaves the tool is
+`:data/agent-config`, through a **declassification** the vocabulary lists:
+
+- the tool declares `:yields`;
+- every returned key has a type the router checks (a host, a name, one of a
+  set, never free text);
+- the router masks key- and token-shaped values;
+- the session's taint and origins follow what the tool yields, not the
+  secrets it read.
+
+Run on a real machine, it found 21 servers in 6 scopes, and nothing of their
+headers, env or arguments came out.
+
+## A policy for every Claude Code session: `bb claude` and the hook
+
+```sh
+bb claude --profile coding [--folder dir] [--dry-run] [-- claude args]
+```
+
+The launcher asks the router for `ai-exposure`'s findings in the folder it
+starts in, so it never reads a config itself. It combines them with a profile
+(`profiles/*.edn`) and writes the session's settings:
+
+- **MCP servers:** it denies those the findings name as unverified programs
+  there, unless the profile keeps them. With `:verified-only`, every server
+  but the verified tools is off.
+- **Files:** it denies reading files that hold keys.
+- **The shell sandbox:** on, with reads of the home folder off except the
+  working directory, and no escapes. The network allowlist comes from the
+  providers holding what the profile reads, plus the profile's own hosts.
+- **The hook:** `bb policy-hook`, the verified-tools policy, runs as a
+  PreToolUse hook on every call, built-in tools included:
+  - reading a file that holds keys taints the session `:secret`, and any
+    later call that reaches the network is denied;
+  - a web fetch taints it `:untrusted`, and network commands are then asked
+    about;
+  - every decision is recorded with its reason.
+
+In a live headless session, the hook denied a shell command reaching
+`exfil.invalid` after the session had read a credentials file.
+
+What it can't do yet:
+
+- **A profile that requires the shell sandbox won't start without it.** On
+  Linux, Claude Code needs bubblewrap and `socat`.
+- **Servers turned off still load.** Denying a server stops its calls, but its
+  tool definitions are still loaded. With many servers, a session can exceed
+  the context limit: one did here, at about 1.3M tokens. `:verified-only`
+  profiles avoid it, with `--strict-mcp-config`.
+- **The hook's taint is its own.** It isn't yet shared with the router's
+  session taint for verified tools.
+
 ## Installing a module
 
 ```

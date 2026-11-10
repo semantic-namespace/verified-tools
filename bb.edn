@@ -6,6 +6,7 @@
 ;; bb add      installs a module pinned by SHA, after showing what it may do
 ;; bb remove   removes one, after showing what goes with it
 ;; bb diff     what changes between two artifacts
+;; bb claude   starts Claude Code under a profile's policy: bb claude --profile finance [--dry-run]
 ;; bb test     the checks, the build, the router, the sandbox and the egress, end to end
 {:paths ["router/src" "sdk/src" "dev"]
  :deps {io.github.semantic-namespace/meta-source {:git/url "https://github.com/semantic-namespace/meta-source"
@@ -34,6 +35,12 @@
          diff {:doc "What changes between two artifacts: bb diff old.edn new.edn"
                :requires ([verified.diff :as diff])
                :task (apply diff/-main *command-line-args*)}
+         claude {:doc "Starts Claude Code under a profile's policy: bb claude --profile <name> [--folder dir] [--dry-run] [-- claude args]"
+                 :requires ([verified.launcher :as launcher])
+                 :task (apply launcher/-main *command-line-args*)}
+         policy-hook {:doc "The verified-tools policy as a Claude Code PreToolUse hook (stdin: the hook's JSON)"
+                      :requires ([verified.hook :as hook])
+                      :task (apply hook/-main *command-line-args*)}
          test {:doc "Runs test/: bb test [namespace-suffix ...]"
                :extra-paths ["test"]
                :requires ([verified.test-runner :as tr])

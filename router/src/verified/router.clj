@@ -116,6 +116,35 @@
                                 false)))
                args)))
 
+(def ^:private type-checks
+  {:host #(and (string? %) (<= (count %) 253) (boolean (re-matches #"[A-Za-z0-9.-]+(:\d{1,5})?" %)))
+   :name #(and (string? %) (<= (count %) 80) (boolean (re-matches #"[\p{L}\p{N} ._@/:+-]*" %)))
+   :names #(and (sequential? %) (<= (count %) 200)
+                (every? (fn [x] (and (string? x) (<= (count x) 80) (re-matches #"[\p{L}\p{N} ._@/:+-]*" x))) %))
+   :int integer?
+   :bool boolean?
+   :date #(and (string? %) (boolean (re-matches #"\d{4}-\d{2}-\d{2}" %)))})
+
+(defn- typed
+  "A row's values checked against its declared types: a value that isn't
+   one is replaced, saying so. A declassified return carries only what its
+   type allows: a host, a name, one of a set, never free text."
+  [types row]
+  (if-not types
+    row
+    (into {} (for [[k v] row
+                   :let [ty (get types k)
+                         ok? (cond (nil? v) true
+                                   (set? ty) (contains? ty v)
+                                   (type-checks ty) ((type-checks ty) v)
+                                   :else true)]]
+               [k (if ok? v (str "[not a " (if (set? ty) "declared value" (name ty)) "]"))]))))
+
+(declare redact)
+
+(defn- redact-deep [patterns v]
+  (if (sequential? v) (mapv #(redact patterns %) v) (redact patterns v)))
+
 (defn- redact [patterns v]
   (if (string? v)
     (reduce (fn [s [k re]] (str/replace s (re-pattern re) (str "[" (name k) " masked]"))) v patterns)
@@ -221,12 +250,20 @@
     (cond (string? b) {:path b :holds declared}
           (map? b) {:path (:path b) :holds (or (:holds b) declared)})))
 
+(defn- bound-root?
+  "Whether the user bound root r to what it declares: a folder, or one file
+   for a :file root."
+  [t r]
+  (let [{:keys [path]} (binding-of t r)
+        f (when (string? path) (io/file path))]
+    (boolean (and f (if (get-in t [:roots r :file]) (.isFile f) (.isDirectory f))))))
+
 (defn- unbound-roots
-  "The tool's declared roots the user hasn't bound to an existing folder."
+  "The tool's declared roots, not :optional, the user hasn't bound to what
+   they declare."
   [t]
   (for [r (sort (keys (:roots t)))
-        :let [{:keys [path]} (binding-of t r)]
-        :when (not (and (string? path) (.isDirectory (io/file path))))]
+        :when (and (not (get-in t [:roots r :optional])) (not (bound-root? t r)))]
     r))
 
 (defn- misclassified-roots
@@ -245,10 +282,16 @@
   (let [fill (merge {"{root}" (.getCanonicalPath (io/file "."))
                      "{bb}" (bb-path)
                      "{artifact-dir}" (.getCanonicalPath (.getParentFile (.getAbsoluteFile (io/file (:artifact @config)))))}
-                    (into {} (for [r (keys (:roots t))]
+                    (into {} (for [r (keys (:roots t)) :when (bound-root? t r)]
                                [(str "{root:" (name r) "}")
-                                (.getCanonicalPath (io/file (:path (binding-of t r))))])))]
-    (mapv #(str/replace % #"\{root\}|\{bb\}|\{artifact-dir\}|\{root:[a-z0-9-]+\}" fill) (:sandbox t))))
+                                (.getCanonicalPath (io/file (:path (binding-of t r))))])))
+        ;; an optional root left unbound is mounted nowhere: its bind goes
+        unbound (set (for [r (keys (:roots t)) :when (not (bound-root? t r))] (str "{root:" (name r) "}")))
+        args (loop [[a & more :as as] (:sandbox t) out []]
+               (cond (empty? as) out
+                     (and (= "--ro-bind" a) (unbound (first more))) (recur (drop 2 more) out)
+                     :else (recur more (conj out a))))]
+    (mapv #(str/replace % #"\{root\}|\{bb\}|\{artifact-dir\}|\{root:[a-z0-9-]+\}" fill) args)))
 
 (defn- run-tool [tid t args]
   (let [cmd (concat (sandbox t) ["bb" "-cp" (str "sdk/src:router/src:modules/" (:dir t) "/src")
@@ -383,11 +426,13 @@
                     more (or more (> (count rows) cap))
                     rows (->> rows
                               (take cap)
-                              (mapv #(update-vals (select-keys % returns) (partial redact patterns))))]
+                              (mapv #(->> (select-keys % returns)
+                                          (typed (:returns-types t))
+                                          (into {} (map (fn [[k v]] [k (redact-deep patterns v)]))))))]
                 (swap! session #(-> %
-                                    (update :taint into reads)
+                                    (update :taint into (or (:yields t) reads))
                                     (update :origins (fn [o] (reduce (fn [o c] (update o c (fnil into #{}) (sources-of t)))
-                                                                     o (when (seq (sources-of t)) reads))))
+                                                                     o (when (seq (sources-of t)) (or (:yields t) reads)))))
                                     (update-in [:calls tid] (fnil inc 0))))
                 (audit! {:tool tid :args args :rows (count rows) :more more :keys returns :taint (:taint @session)
                          :origins (:origins @session)})
