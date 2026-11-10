@@ -1,0 +1,7 @@
+{:llm-profile/demo-qa
+ {:summary "QA on staging"
+  :commands {:deny ["psql *prod*"] :ask ["git push *"]}
+  :network #{"github.com"}
+  :prompts #{:prompt/qa}
+  :surfaces [{:surface/env :env/staging :surface/scope :mcp-scope/qa
+              :tools {"read_thing" :allow "write_thing" :ask "send_thing" :deny}}]}}
