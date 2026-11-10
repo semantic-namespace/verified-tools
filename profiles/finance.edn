@@ -1,0 +1,10 @@
+;; A session over your mail and money: verified tools only, the shell in
+;; its sandbox with the network limited to the providers holding that data,
+;; nothing of your home folder but the working directory.
+{:profile/id :profile/finance
+ :doc "Mail and money: verified tools only, provider-only network, no web"
+ :reads #{:data/financial :data/email}
+ :mcp :verified-only
+ :sandbox :required
+ :network {:providers-for :reads :extra []}
+ :deny-tools ["WebFetch" "WebSearch"]}

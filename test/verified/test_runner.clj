@@ -2,7 +2,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]))
 
-(def namespaces '[verified.parse-test verified.files-test verified.bundle-test verified.check-test verified.build-test verified.router-test verified.live-test verified.install-test verified.exposure-test])
+(def namespaces '[verified.parse-test verified.files-test verified.bundle-test verified.check-test verified.build-test verified.router-test verified.live-test verified.install-test verified.exposure-test verified.hook-test])
 
 (defn -main [& only]
   (let [nss (filter (fn [n] (or (empty? only) (some #(str/includes? (str n) %) only))) namespaces)]

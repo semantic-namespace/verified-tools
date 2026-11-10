@@ -1,0 +1,11 @@
+;; A session on code: the repository and its package registries; your MCP
+;; servers except the unverified programs the findings name, unless listed;
+;; nothing of your home folder but the working directory.
+{:profile/id :profile/coding
+ :doc "Code: the repository and its registries; unverified MCP programs off unless listed"
+ :reads #{}
+ :mcp {:allow-unverified #{"clojure-mcp"}}
+ :sandbox :preferred
+ :network {:extra ["github.com" "api.github.com" "codeload.github.com" "registry.npmjs.org"
+                   "clojars.org" "repo1.maven.org" "repo.clojars.org" "pypi.org" "files.pythonhosted.org"]}
+ :deny-tools []}

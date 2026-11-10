@@ -115,6 +115,45 @@ The files hold keys (`:data/secret`). What leaves the tool is
 Run on a real machine, it found 21 servers in 6 scopes, and nothing of their
 headers, env or arguments came out.
 
+## A policy for every Claude Code session: `bb claude` and the hook
+
+```sh
+bb claude --profile coding [--folder dir] [--dry-run] [-- claude args]
+```
+
+The launcher asks the router for `ai-exposure`'s findings in the folder it
+starts in, so it never reads a config itself. It combines them with a profile
+(`profiles/*.edn`) and writes the session's settings:
+
+- **MCP servers:** it denies those the findings name as unverified programs
+  there, unless the profile keeps them. With `:verified-only`, every server
+  but the verified tools is off.
+- **Files:** it denies reading files that hold keys.
+- **The shell sandbox:** on, with reads of the home folder off except the
+  working directory, and no escapes. The network allowlist comes from the
+  providers holding what the profile reads, plus the profile's own hosts.
+- **The hook:** `bb policy-hook`, the verified-tools policy, runs as a
+  PreToolUse hook on every call, built-in tools included:
+  - reading a file that holds keys taints the session `:secret`, and any
+    later call that reaches the network is denied;
+  - a web fetch taints it `:untrusted`, and network commands are then asked
+    about;
+  - every decision is recorded with its reason.
+
+In a live headless session, the hook denied a shell command reaching
+`exfil.invalid` after the session had read a credentials file.
+
+What it can't do yet:
+
+- **A profile that requires the shell sandbox won't start without it.** On
+  Linux, Claude Code needs bubblewrap and `socat`.
+- **Servers turned off still load.** Denying a server stops its calls, but its
+  tool definitions are still loaded. With many servers, a session can exceed
+  the context limit: one did here, at about 1.3M tokens. `:verified-only`
+  profiles avoid it, with `--strict-mcp-config`.
+- **The hook's taint is its own.** It isn't yet shared with the router's
+  session taint for verified tools.
+
 ## Installing a module
 
 ```
