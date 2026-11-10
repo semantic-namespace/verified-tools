@@ -14,7 +14,7 @@
    gives it, and checked against its declaration: its tool functions
    (^{:module/tool id}) are the declared tools; it reaches the world only
    through the SDK (verified.sdk.http/call, query/fill, files/read,
-   out/rows), each called with a literal keyword the declaration names; it
+   files/list, bundle/read-edn, out/rows), each called with a literal keyword the declaration names; it
    calls nothing outside it (an HTTP client, a shell, eval, Java interop
    but a few pure classes, the SDK's own dynamic vars); and every
    qualified key it writes in a map is one its tools declare returning."
@@ -28,7 +28,7 @@
   (second (re-find #"(?:^|/)modules/([^/]+)/" (str f))))
 
 (def ^:private sdk-fns
-  '{verified.sdk.http #{call} verified.sdk.query #{fill} verified.sdk.files #{read list} verified.sdk.out #{rows}})
+  '{verified.sdk.http #{call} verified.sdk.query #{fill} verified.sdk.files #{read list} verified.sdk.bundle #{read-edn} verified.sdk.out #{rows}})
 
 ;; what a module may not call: the world outside the SDK
 (def ^:private forbidden-nses
@@ -71,6 +71,7 @@
                                             (keyword (name ek) (name rk)))))
                 :module/queries (vec (sort (keys (get-in by-key [:queries :v]))))
                 :module/roots (vec (sort (keys (get-in by-key [:files :v]))))
+                :module/bundle (vec (sort (keys (get-in by-key [:bundle :v]))))
                 :module/root-holds (into (sorted-map) (for [[r d] (get-in by-key [:files :v])] [r (when (map? d) (:holds d))]))
                 :module/returns (vec (sort (distinct (mapcat :returns (vals (get-in by-key [:tools :v])))))) 
                 :module/version (get-in by-key [:module/version :v])
@@ -286,6 +287,7 @@
                                            "call" (set (:module/routes m))
                                            "fill" (set (:module/queries m))
                                            ("read" "list") (set (:module/roots m))
+                                           "read-edn" (set (:module/bundle m))
                                            "rows" #{(tool-of from-var)})]
                            :when (or (= :computed arg) (not (allowed arg)))]
                        {:severity :error :problem (if (= :computed arg) :sdk-arg-not-literal :sdk-arg-not-declared)
