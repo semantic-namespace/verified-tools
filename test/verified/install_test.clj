@@ -254,6 +254,23 @@
           [out _] (run #(install/add! {:root d :url url :sha sha :dry-run true}))]
       (is (str/includes? out "GET gmail.googleapis.com/gmail/v1/users/me/messages   (a registered provider of email)") out))))
 
+(defn- declassifying
+  "word-count, declared reading reads and yielding agent-config, its return typed by types."
+  [reads types]
+  (update word-count "module.edn" str/replace
+          ":reads #{:data/note}"
+          (str ":reads " (pr-str reads) "\n   :yields #{:data/agent-config}"
+               (when types (str "\n   :returns-types " (pr-str types))))))
+
+(deftest declassification-is-listed-and-typed
+  (is (str/includes? (refused-with "declass-financial" (declassifying #{:data/financial} {:count/words :int}))
+                     "lists no declassification from :data/financial"))
+  (is (str/includes? (refused-with "declass-untyped" (declassifying #{:data/secret} nil))
+                     "a declassified return needs a checkable type"))
+  (let [d (project!) {:keys [url sha]} (repo! "declass-ok" (declassifying #{:data/secret} {:count/words :int}))
+        [out res] (run #(install/add! {:root d :url url :sha sha :dry-run true}))]
+    (is (nil? (:excluded res)) out)))
+
 (deftest pinned-by-sha-only
   (let [d (project!) {:keys [url]} (repo! "word-count-branch" word-count)]
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"full commit SHA"

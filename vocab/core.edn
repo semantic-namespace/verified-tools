@@ -30,6 +30,12 @@
   :ontology/for :verified/provider
   :ontology/keys [:provider/host :provider/holds]}
 
+ :verified/declassification
+ {:atlas/type :atlas/ontology
+  :atlas/aspects #{:meta/ontology-declassification}
+  :ontology/for :verified/declassification
+  :ontology/keys [:declassification/from :declassification/to]}
+
  ;; ---- the terms
  :verified/core-vocabulary
  {:atlas/type :verified/vocabulary
@@ -44,6 +50,7 @@
    :data/contact "people and how to reach them"
    :data/location "where the user is or has been"
    :data/secret "credentials, keys, passwords"
+   :data/agent-config "which agents and servers you use: names, hosts, programs; never their keys"
    :effect/read "reads, changes nothing"
    :effect/write "changes the user's data"
    :effect/send "sends something on the user's behalf"
@@ -64,6 +71,17 @@
   :atlas/aspects #{:meta/provider-gmail}
   :provider/host "gmail.googleapis.com"
   :provider/holds #{:data/email}}
+
+ ;; ---- the declassifications: a tool reading a class may yield a lower one
+ ;; only where one is listed here, and only through returns whose every key
+ ;; has a declared type the router checks (a host, a name, one of a set),
+ ;; never free text: what the files held stays in them.
+ :declassification/agent-config-from-secret
+ {:atlas/type :verified/declassification
+  :atlas/aspects #{:meta/declassification-agent-config}
+  :declassification/from :data/secret
+  :declassification/to :data/agent-config
+  :declassification/doc "an agent's configuration holds keys; which servers it uses, and where they are, is not one"}
 
  ;; ---- the refinements: a narrow term always carries its broad one, so a
  ;; policy on the broad term covers it (checked, never inferred)
@@ -96,7 +114,10 @@
   ;; applied in this order, the most specific first: an IBAN's digits
   ;; would otherwise match as a card number, and leave the rest readable
   :redact/patterns [[:iban "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){3,7}\\b"]
-                    [:card-number "\\b(?:\\d[ -]?){13,16}\\b"]]}
+                    [:card-number "\\b(?:\\d[ -]?){13,16}\\b"]
+                    ;; keys and tokens, by their usual shapes
+                    [:api-key "\\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|gh[ousr]_[A-Za-z0-9]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{30,}|ya29\\.[A-Za-z0-9_-]{20,})"]
+                    [:jwt "\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"]]}
 
  ;; ---- the policies, in core terms
  :policy/financial-stays-with-provider

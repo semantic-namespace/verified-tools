@@ -1,0 +1,48 @@
+;; What can your AI see? Your agents' MCP servers, read from their own
+;; configuration files, and the risky combinations among them. The files
+;; hold keys (:data/secret); what leaves the tool is which servers each
+;; agent uses and where they are, typed and checked: :data/agent-config,
+;; a declassification the vocabulary lists. No network.
+{:module/id :mod/ai-exposure
+ :module/version "0.1.0"
+
+ :tools
+ {:tool/agent-connectors
+  {:doc "Each MCP server your AI agents can use: the agent, where it applies (everywhere, or one project), its name, whether it runs as a local program, is a remote service, or is a verified tool set, and its host or program"
+   :args {}
+   :reads #{:data/secret :data/agent-config}
+   :yields #{:data/agent-config}
+   :effect :effect/read
+   :egress #{:egress/none}
+   :returns [:connector/agent :connector/scope :connector/name :connector/kind :connector/host :connector/program]
+   :returns-types {:connector/agent :name :connector/scope :name :connector/name :name
+                   :connector/kind #{"command" "remote" "verified"}
+                   :connector/host :host :connector/program :name}
+   :caps {:per-call 500 :per-session 50}}
+
+  :tool/exposure-findings
+  {:doc "Risky combinations among your agents' MCP servers: a local program running as you with unbounded reach, and an agent that can reach private data, untrusted content and a way to send out, all at once. Each finding names the agent, where it applies, the servers involved, and which of the three each gives"
+   :args {}
+   :reads #{:data/secret :data/agent-config}
+   :yields #{:data/agent-config}
+   :effect :effect/read
+   :egress #{:egress/none}
+   :returns [:finding/rule :finding/agent :finding/scope :finding/connectors :finding/legs :finding/unknown-hosts]
+   :returns-types {:finding/rule #{"unverified-program" "trifecta" "unknown-hosts"}
+                   :finding/agent :name :finding/scope :name
+                   :finding/connectors :names :finding/legs :names :finding/unknown-hosts :names}
+   :caps {:per-call 500 :per-session 50}}}
+
+ :files
+ {;; Claude Code's own file, in your home folder: bound alone
+  :claude-code {:holds :data/secret :file true :optional true :extensions #{"json"} :max-bytes 5000000}
+  ;; Claude Desktop's config (~/.config/Claude/claude_desktop_config.json)
+  :claude-desktop {:holds :data/secret :file true :optional true :extensions #{"json"}}
+  ;; Cursor's (~/.cursor/mcp.json)
+  :cursor {:holds :data/secret :file true :optional true :extensions #{"json"}}
+  ;; the verified router's artifact folder: what verified tools may do
+  :verified {:holds :data/agent-config :optional true :extensions #{"edn"}}}
+
+ :bundle
+ {;; what remote MCP hosts reach, as Yorba's service registry would say it
+  :hosts "data/hosts.edn"}}

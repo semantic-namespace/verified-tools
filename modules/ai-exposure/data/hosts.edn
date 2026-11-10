@@ -1,0 +1,11 @@
+;; Remote MCP hosts, and what an agent reaches through each: :private (your
+;; data), :untrusted (content others write), :send (a way out: posting,
+;; mailing, acting for you). A stand-in for Yorba's service registry; a
+;; suffix entry (".example.com") covers its subdomains.
+{"mcp.notion.com" {:reach #{:private :send} :holds "your documents"}
+ "mcp.linear.app" {:reach #{:private :send} :holds "your issues"}
+ "mcp.atlassian.com" {:reach #{:private :untrusted :send} :holds "your Jira and Confluence"}
+ "mcp.slack.com" {:reach #{:private :untrusted :send} :holds "your messages"}
+ "api.githubcopilot.com" {:reach #{:private :untrusted :send} :holds "your repositories and issues"}
+ "mcp.stripe.com" {:reach #{:private :send} :holds "your payments"}
+ ".yorba.app" {:reach #{:private :send} :holds "your Yorba data: accounts, inbox findings, and actions on them"}}

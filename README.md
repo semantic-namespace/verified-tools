@@ -86,6 +86,35 @@ You bind the root to a folder, per module, in `live.edn`:
 - **`bb add` shows a module's roots and flags changes to them:** a new root,
   or more kinds of file read from one, is ▲.
 
+## What can my AI see? (`ai-exposure`)
+
+This module reads your agents' MCP configuration from Claude Code's
+`~/.claude.json`, Claude Desktop and Cursor, bound as single-file roots. All
+three are optional, because not everyone uses each agent.
+
+- **`agent_connectors`** returns each server's agent, scope, name and kind
+  (local program, remote service, or verified tool set), with its host or
+  program.
+- **`exposure_findings`** flags three things:
+  - local programs running as you, which reach everything on their own;
+  - an agent whose servers of known reach together reach private data,
+    untrusted content and a way out (the trifecta);
+  - hosts the bundled registry doesn't know. The registry stands in for
+    Yorba's.
+
+The files hold keys (`:data/secret`). What leaves the tool is
+`:data/agent-config`, through a **declassification** the vocabulary lists:
+
+- the tool declares `:yields`;
+- every returned key has a type the router checks (a host, a name, one of a
+  set, never free text);
+- the router masks key- and token-shaped values;
+- the session's taint and origins follow what the tool yields, not the
+  secrets it read.
+
+Run on a real machine, it found 21 servers in 6 scopes, and nothing of their
+headers, env or arguments came out.
+
 ## Installing a module
 
 ```

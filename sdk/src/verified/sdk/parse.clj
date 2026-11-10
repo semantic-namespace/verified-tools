@@ -1,7 +1,8 @@
 (ns verified.sdk.parse
   "Pure helpers for what a provider returns: a Gmail message's headers and
    text, an amount and a currency in it. No I/O."
-  (:require [clojure.string :as str]))
+  (:require [cheshire.core :as json]
+            [clojure.string :as str]))
 
 (defn header [msg n]
   (some #(when (= (str/lower-case n) (str/lower-case (:name %))) (:value %)) (get-in msg [:payload :headers])))
@@ -75,3 +76,9 @@
 
 (defn currency [s]
   (cond (nil? s) nil (re-find #"€|EUR" s) "EUR" (re-find #"\$|USD" s) "USD" (re-find #"£|GBP" s) "GBP"))
+
+(defn json
+  "JSON text as data, keys as strings (a file's keys are the file's, never
+   keywords minted from it); nil when it isn't JSON."
+  [s]
+  (try (json/parse-string s) (catch Exception _ nil)))

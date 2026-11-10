@@ -36,7 +36,7 @@
 (deftest lists-the-artifacts-tools
   (with-session [s "list" {}]
     (let [tools (get-in (u/request s "tools/list" {}) [:result :tools])]
-      (is (= #{"receipts_search" "share_snippet" "local_notes_search"} (set (map :name tools))))
+      (is (= #{"receipts_search" "share_snippet" "local_notes_search" "agent_connectors" "exposure_findings"} (set (map :name tools))))
       (is (str/includes? (:description (first (filter #(= "share_snippet" (:name %)) tools)))
                          "asks the user")))))
 

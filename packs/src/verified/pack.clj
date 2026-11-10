@@ -28,7 +28,7 @@
   (second (re-find #"(?:^|/)modules/([^/]+)/" (str f))))
 
 (def ^:private sdk-fns
-  '{verified.sdk.http #{call} verified.sdk.query #{fill} verified.sdk.files #{read list} verified.sdk.bundle #{read-edn} verified.sdk.out #{rows}})
+  '{verified.sdk.http #{call} verified.sdk.query #{fill} verified.sdk.files #{read list bound?} verified.sdk.bundle #{read-edn} verified.sdk.out #{rows}})
 
 ;; what a module may not call: the world outside the SDK
 (def ^:private forbidden-nses
@@ -92,11 +92,17 @@
                           ;; what it declares, as its aspects, and the module it is
                           ;; declared in: two modules' tools reading the same are
                           ;; two capabilities, not one identity
+                          ;; and what it gives back, by its returned keys' namespaces: two
+                          ;; tools reading the same are two capabilities when they return
+                          ;; different things
                           :atlas/aspects (into #{(keyword "module" (name mid))}
-                                               (concat (many (:reads t)) (many (:effect t)) (many (:egress t))))}
+                                               (concat (many (:reads t)) (many (:effect t)) (many (:egress t))
+                                                       (distinct (keep #(some->> (namespace %) (keyword "returns")) (:returns t)))))}
                    (:doc t) (assoc :tool/doc (:doc t))
                    (:args t) (assoc :tool/args (:args t))
                    (:returns t) (assoc :tool/returns (:returns t))
+                   (:yields t) (assoc :tool/yields (vec (sort (many (:yields t)))))
+                   (:returns-types t) (assoc :tool/returns-types (:returns-types t))
                    (:caps t) (assoc :tool/caps (:caps t))
                    (contains? t :confirm) (assoc :tool/confirm (:confirm t)))})))))
 
@@ -264,6 +270,30 @@
                      [{:severity :error :problem :effect-understated :dev-id tid :host host :effect effect :needs needs
                        :methods (vec (sort (remove #{:get} methods))) :definition (loc e)}]))]
             p))
+        ;; ---- declassification: a tool yielding less than it reads drops a
+        ;; class only where the vocabulary lists that declassification, and
+        ;; only through returns of checkable types (never free text)
+        (let [declass (set (for [[_ e] entities :when (= :verified/declassification (get-in e [:entry :atlas/type]))]
+                             [(get-in e [:entry :declassification/from]) (get-in e [:entry :declassification/to])]))
+              types #{:host :name :names :int :bool :date}]
+          (for [[tid e] tools
+                :let [t (:entry e) yields (some-> (:tool/yields t) set)]
+                :when yields
+                p (concat
+                   (for [y (sort yields)
+                         :when (not (and (= "data" (namespace y)) (or (terms y) (narrows y))))]
+                     {:severity :error :problem :yields-unknown :dev-id tid :class y :definition (loc e)})
+                   (for [r (sort (:tool/reads t))
+                         :when (and (= "data" (namespace r)) (not (yields r))
+                                    (not-any? #(declass [r %]) yields))]
+                     {:severity :error :problem :declassification-not-listed :dev-id tid :from r
+                      :to (vec (sort yields)) :definition (loc e)})
+                   (for [k (:tool/returns t)
+                         :let [ty (get (:tool/returns-types t) k)]
+                         :when (not (or (types ty) (set? ty)))]
+                     {:severity :error :problem :declassified-return-untyped :dev-id tid :key k :type ty
+                      :definition (loc e)}))]
+            p))
         ;; ---- each module's code against its declaration
         (let [modules (for [[id e] entities :when (= :module (get-in e [:entry :verified/kind]))] [id (:entry e) e])
               code (into {} (for [[_ e] entities :when (= :code (get-in e [:entry :verified/kind]))]
@@ -286,7 +316,7 @@
                            :let [allowed (case (str fname)
                                            "call" (set (:module/routes m))
                                            "fill" (set (:module/queries m))
-                                           ("read" "list") (set (:module/roots m))
+                                           ("read" "list" "bound?") (set (:module/roots m))
                                            "read-edn" (set (:module/bundle m))
                                            "rows" #{(tool-of from-var)})]
                            :when (or (= :computed arg) (not (allowed arg)))]
@@ -344,6 +374,13 @@
     :effect-understated (fn [p id _] (str id " declares " (:effect p) ", and its module uses "
                                           (clojure.string/join " " (map (comp clojure.string/upper-case name) (:methods p)))
                                           " on " (:host p) ": its effect is at least " (:needs p)))
+    :yields-unknown (fn [p id _] (str id " yields " (:class p) ", which isn't a vocabulary data class"))
+    :declassification-not-listed (fn [p id _] (str id " reads " (:from p) " and yields " (pr-str (:to p))
+                                                   ": the vocabulary lists no declassification from " (:from p) " to it"))
+    :declassified-return-untyped (fn [p id _] (str id " yields less than it reads, and returns " (:key p)
+                                                   (if (:type p) (str " as " (pr-str (:type p))) " with no type")
+                                                   ": a declassified return needs a checkable type"
+                                                   " (:host :name :names :int :bool :date, or a set of values)"))
     :key-not-declared (fn [p id _] (str id ": " (:var p) " builds a map with " (:key p) ", which no tool declares returning"))}
 
    :pack/describe (fn [entry] (case (:verified/kind entry)
