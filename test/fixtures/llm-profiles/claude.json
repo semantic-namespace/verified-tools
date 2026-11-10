@@ -1,0 +1,3 @@
+{"mcpServers": {"staging-mcp": {"type": "stdio", "command": "docker",
+                                "args": ["run", "-e", "X_CLIENT_KEY=FAKE-SECRET-123", "-e", "MCP_SERVER_URL=https://staging.example/mcp", "bridge"]}},
+ "projects": {"/x": {"mcpServers": {"prod-mcp": {"type": "http", "url": "https://prod.example/mcp", "headers": {"Authorization": "Bearer FAKE"}}}}}}

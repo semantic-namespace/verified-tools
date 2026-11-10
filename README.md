@@ -154,6 +154,40 @@ What it can't do yet:
 - **The hook's taint is its own.** It isn't yet shared with the router's
   session taint for verified tools.
 
+## A profile a system declares about itself: `bb claude --export` / `--from-ci`
+
+A system can declare its own LLM profiles in its atlas registry
+(`:atlas/llm-profile`): which surface a session loads, and a decision for
+every class of tool. yorba-clj does, and its CI uploads the export of each
+build as the `llm-profiles` artifact.
+
+```sh
+bb claude --from-ci RucaHQ/yorba-clj@<branch-or-commit> --profile llm-profile/yorba-qa-staging [--dry-run]
+bb claude --export llm-profiles-export.edn --profile llm-profile/yorba-qa-staging
+```
+
+`atlas.adapter.claude-code` turns the profile into the session's rules and
+servers:
+
+- every tool its surfaces serve gets its exact rule,
+  `mcp__<env>-<scope>__<tool>`, under allow, ask or deny;
+- the profile's command patterns become Bash rules, and its hosts the
+  sandbox's network;
+- each surface gets one server: yours for that environment, pointed at the
+  surface's partition (`/mcp` → `/mcp/qa`), and nothing else loads.
+
+verified-tools adds what a registry doesn't know: files holding keys are
+never read, the sandbox's filesystem limits, and the policy hook on every
+call.
+
+`surfaces.edn` is yours and not in git. It says which of your servers is each
+environment's, for example `{:env/staging "staging-yorba-mcp"}`. Use
+`{:server … :rescope false}` for a server whose partition path can't be used:
+it then serves its whole surface, the profile's tools get their rules, and
+the rest get none. The copied server entries carry your own credentials, so
+they're written to the session's folder, readable by you only, and never
+printed.
+
 ## Installing a module
 
 ```

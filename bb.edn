@@ -9,7 +9,11 @@
 ;; bb claude   starts Claude Code under a profile's policy: bb claude --profile finance [--dry-run]
 ;; bb test     the checks, the build, the router, the sandbox and the egress, end to end
 {:paths ["router/src" "sdk/src" "dev"]
- :deps {io.github.semantic-namespace/meta-source {:git/url "https://github.com/semantic-namespace/meta-source"
+ :deps {;; atlas.adapter.claude-code: an :atlas/llm-profile export -> a Claude Code session
+        io.github.semantic-namespace/atlas {:git/url "https://github.com/semantic-namespace/atlas"
+                                            :git/sha "c9257848fc39a2b0e12df6e0c42b17d6be6c6acc"
+                                            :deps/root "core"}
+        io.github.semantic-namespace/meta-source {:git/url "https://github.com/semantic-namespace/meta-source"
                                                   :git/sha "24cfd78374cdd98c8d8e9b498f3f983a82390eff"}}
  :tasks {check {:doc "meta-source check over vocab/ and modules/: bb check [--fail-on error]"
                 :requires ([meta-source.cli :as cli])

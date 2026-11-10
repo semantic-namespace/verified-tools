@@ -26,7 +26,9 @@
             [cheshire.core :as json]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [atlas.adapter.claude-code :as cc]
+            [verified.export-launcher :as export-launcher]))
 
 (def root (str (fs/canonicalize ".")))
 
@@ -88,6 +90,42 @@
   (or (not= "Linux" (System/getProperty "os.name"))
       (every? #(fs/which %) ["bwrap" "socat"])))
 
+(defn- launch-export
+  "A session under a profile from a system's own export (export-launcher),
+   started, or shown with --dry-run; never returns."
+  [opts claude-args]
+  (let [session-dir (fs/path root "target" "claude-sessions"
+                             (str (str/replace (:profile opts) #"[^A-Za-z0-9-]" "_") "-" (System/currentTimeMillis)))
+        ci (when (:from-ci opts) (export-launcher/from-ci! (:from-ci opts) (fs/path session-dir "export")))
+        {:keys [settings-file mcp-file profile pid servers counts missing settings]}
+        (export-launcher/prepare {:export (or (:path ci) (:export opts)) :profile (:profile opts)
+                                  :surfaces-file (or (:surfaces opts) (str (fs/path root "surfaces.edn")))
+                                  :claude-json (fs/path (System/getProperty "user.home") ".claude.json")
+                                  :session-dir session-dir :key-files key-files
+                                  :hook-cmd (str "bb --config " (fs/path root "bb.edn") " policy-hook --state-dir "
+                                                 (fs/path session-dir "hook"))})
+        cmd (concat ["claude" "--settings" (str settings-file) "--mcp-config" (str mcp-file) "--strict-mcp-config"]
+                    claude-args)]
+    (println (str "profile " pid ": " (:summary profile)))
+    (when ci (println (str "  from CI       " (:from-ci opts) ", build " (:run ci) " of " (subs (:sha ci) 0 9))))
+    (doseq [[n env where] servers]
+      (println (str "  server        " n ": " (name env) " " where)))
+    (println (str "  its tools     " (get counts :allow 0) " allowed, " (get counts :ask 0) " ask, " (get counts :deny 0) " denied"))
+    (println (str "  shell         denied: " (str/join ", " (get-in profile [:commands :deny]))))
+    (println (str "                asks:   " (str/join ", " (get-in profile [:commands :ask]))))
+    (println (str "  network       " (str/join ", " (get-in settings [:sandbox :network :allowedDomains]))))
+    (println (str "  prompts       " (str/join ", " (map name (sort (:prompts profile))))))
+    (println (str "  never read    files holding keys; every call checked by the verified-tools policy (hook)"))
+    (println (str "  settings      " settings-file))
+    (cond
+      (seq missing)
+      (do (println (str "\nNo server for: " (pr-str missing) ". surfaces.edn names your server per environment, {:env/staging \"staging-yorba-mcp\"}."))
+          (System/exit 1))
+      (:dry-run opts)
+      (do (println (str "\n" (str/join " " cmd))) (System/exit 0))
+      :else
+      (proc/exec (vec cmd)))))
+
 (defn -main [& args]
   (let [[own claude-args] (split-with #(not= "--" %) args)
         claude-args (rest claude-args)
@@ -95,6 +133,7 @@
                (cond (nil? a) o
                      (= a "--dry-run") (recur more (assoc o :dry-run true))
                      :else (recur (rest more) (assoc o (keyword (subs a 2)) (first more)))))
+        _ (when (or (:export opts) (:from-ci opts)) (launch-export opts claude-args))
         profile-name (or (:profile opts) "coding")
         profile (edn/read-string (slurp (str (fs/path root "profiles" (str profile-name ".edn")))))
         folder (str (fs/file-name (fs/canonicalize (or (:folder opts) (System/getProperty "user.dir")))))
